@@ -366,9 +366,11 @@ window.plausible = window.plausible || function() {};
   // params so users can share or bookmark a filtered view.
   const PARAM_KEY_MAP = {
     'format': 'filter-format',
-    'decade': 'filter-decade',
     'genre': 'filter-genre',
     'rating': 'filter-rating',
+    'year': 'filter-year',
+    'runtime': 'filter-runtime',
+    'pop': 'filter-popularity',
     'editions': 'filter-editions',
   };
 
@@ -407,6 +409,7 @@ window.plausible = window.plausible || function() {};
               step: f.step != null ? f.step : 1,
               compact: !!f.compact,
               capLabel: f.capLabel !== false, // default true
+              plainInt: !!f.plainInt, // years etc.: no thousands separator or K/M
             });
           } else {
             this.initCheckboxFilter(f.name, f.filterId, {
@@ -536,9 +539,11 @@ window.plausible = window.plausible || function() {};
     }
 
     initRangeFilter(name, filterId, opts) {
-      const { label, field, min, max, sliderMax, step, compact, capLabel } = opts;
+      const { label, field, min, max, sliderMax, step, compact, capLabel, plainInt } = opts;
 
-      const fmt = compact
+      const fmt = plainInt
+        ? (v) => String(Math.round(v))
+        : compact
         ? (v) => v >= 1e6 ? (v / 1e6).toFixed(1).replace(/\.0$/, '') + 'M'
                           : v >= 1e3 ? Math.round(v / 1e3) + 'K'
                                      : String(v)

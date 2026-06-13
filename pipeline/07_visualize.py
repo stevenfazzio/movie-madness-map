@@ -103,68 +103,66 @@ def _alpha_other_last(values) -> list[str]:
     return out
 
 
-def build_filter_config(df: pd.DataFrame, genre_cat, fmt_cat, rating_cat) -> dict:
+def _range_filter(name, field, label, lo, hi, slider_max, cap_label, plain_int=False) -> dict:
+    return {
+        "type": "range", "name": name, "filterId": f"filter-{name}", "label": label,
+        "field": field, "min": int(lo), "max": int(hi), "sliderMax": int(slider_max),
+        "step": 1, "compact": True, "capLabel": cap_label, "plainInt": plain_int,
+    }
+
+
+def build_filter_config(df: pd.DataFrame, genre_single, fmt_cat, rating_cat) -> dict:
     """Assemble the JSON consumed by FilterPanel in filter_panel.html. Each
-    filter's `field` is an extra_point_data column the panel reads per-point;
-    `colormapFieldToFilterId` ties a filter to its colormap legend for opacity sync."""
+    filter's `field` is an extra_point_data column the panel reads per-point.
+    Checkbox: format / genre (all 65) / rating. Range: year / runtime /
+    popularity / editions. `colormapFieldToFilterId` syncs a filter to its
+    colormap legend (genre is excluded — its filter is finer than the colormap)."""
     fmt_order = ["4K UHD", "Blu-Ray", "DVD", "VHS only", "Other"]
     present_fmt = set(fmt_cat)
     format_values = [f for f in fmt_order if f in present_fmt]
-
-    decades = set(df["decade"])
-    decade_values = sorted(d for d in decades if d != "Unknown")
-    if "Unknown" in decades:
-        decade_values.append("Unknown")
 
     rating_order = ["G", "PG", "PG-13", "R", "NC-17", "X", "N/R"]
     present_rt = set(rating_cat)
     rating_values = [r for r in rating_order if r in present_rt] + sorted(present_rt - set(rating_order))
 
+    year = df["year"].dropna().astype(int)
+    runtime = pd.to_numeric(df["runtime"], errors="coerce")
+    runtime = runtime[runtime > 0]
+    pop = pd.to_numeric(df["popularity"], errors="coerce")
+    pop = pop[pop > 0]
     editions = df["sku_count"].astype(int)
+
     sections = [
-        {
-            "label": "Format & Era",
-            "filters": [
-                {
-                    "name": "format", "filterId": "filter-format", "label": "Format",
-                    "field": "format_filter", "values": format_values,
-                },
-                {
-                    "name": "decade", "filterId": "filter-decade", "label": "Decade",
-                    "field": "decade_filter", "values": decade_values,
-                },
-            ],
-        },
         {
             "label": "Categories",
             "filters": [
-                {
-                    "name": "genre", "filterId": "filter-genre", "label": "Genre (coarse)",
-                    "field": "genre_filter", "values": _alpha_other_last(genre_cat),
-                },
-                {
-                    "name": "rating", "filterId": "filter-rating", "label": "MPAA Rating",
-                    "field": "rating_filter", "values": rating_values,
-                },
+                {"name": "format", "filterId": "filter-format", "label": "Format",
+                 "field": "format_filter", "values": format_values},
+                {"name": "genre", "filterId": "filter-genre", "label": "Genre (coarse)",
+                 "field": "genre_filter", "values": _alpha_other_last(genre_single)},
+                {"name": "rating", "filterId": "filter-rating", "label": "MPAA Rating",
+                 "field": "rating_filter", "values": rating_values},
             ],
         },
         {
-            "label": "Stock",
+            "label": "Ranges",
             "filters": [
-                {
-                    "type": "range", "name": "editions", "filterId": "filter-editions",
-                    "label": "Editions in stock", "field": "editions_filter",
-                    "min": int(editions.min()), "max": int(editions.max()),
-                    "sliderMax": int(editions.max()), "step": 1, "compact": True, "capLabel": False,
-                },
+                # Year: full linear range (no heavy tail to cap); plain int label
+                # so 1894 doesn't render as "2K" or "1,894".
+                _range_filter("year", "year_filter", "Release year",
+                              year.min(), year.max(), year.max(), cap_label=False, plain_int=True),
+                # Runtime & popularity are heavy-tailed -> cap the slider at the
+                # 99th percentile; the max handle at cap means "include above".
+                _range_filter("runtime", "runtime_filter", "Runtime (min)",
+                              1, runtime.max(), np.percentile(runtime, 99), cap_label=True),
+                _range_filter("popularity", "popularity_filter", "TMDB popularity",
+                              0, pop.max(), np.percentile(pop, 99), cap_label=True),
+                _range_filter("editions", "editions_filter", "Editions in stock",
+                              editions.min(), editions.max(), editions.max(), cap_label=False),
             ],
         },
     ]
-    colormap_to_filter = {
-        "store_genre": "filter-genre",
-        "format": "filter-format",
-        "rating": "filter-rating",
-    }
+    colormap_to_filter = {"format": "filter-format", "rating": "filter-rating"}
     return {
         "totalCount": int(len(df)),
         "sections": sections,
@@ -362,21 +360,29 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
 
     # --- colormaps ---
     year_num = _fill_nonfinite(df["year"].to_numpy(dtype=float))
-    # Coarse store genre (75 values) bucketed to top-15 + "Other" — the store's
-    # top-level shelf family ("Horror" of "Horror > Stalker Films").
-    genre_cat = bucket_top_n(pick_coarse_genre(df["genres_coarse"]), 15).to_numpy()
+    # One coarse genre per film. The COLORMAP buckets to top-15 + "Other" (a
+    # 65-color glasbey legend is unreadable); the FILTER keeps all 65 so every
+    # genre is selectable, so the two intentionally differ (no legend sync).
+    genre_single = pick_coarse_genre(df["genres_coarse"])
+    genre_cat = bucket_top_n(genre_single, 15).to_numpy()
     fmt_cat = df["formats"].map(format_bucket).to_numpy()
     rating_cat = rating_clean.to_numpy()
     editions = df["sku_count"].to_numpy(dtype=float).clip(1, 10)
 
     # Per-point values the Advanced Filters panel reads (extra_point_data cols,
-    # distinct from the colormap _r/_g/_b/_a columns; same arrays so a filter and
-    # its colormap legend agree). Range filter wants real counts, not the clip.
+    # distinct from the colormap _r/_g/_b/_a columns). Range-filter fields encode
+    # "missing" as a sentinel strictly below the slider min (0 for year/runtime,
+    # -1 for popularity) so undated/unmatched films are shown at reset but drop
+    # out the moment that slider is touched — see build_filter_config.
+    runtime_num = pd.to_numeric(df["runtime"], errors="coerce")
+    pop_num = pd.to_numeric(df["popularity"], errors="coerce")
     extra["format_filter"] = fmt_cat
-    extra["decade_filter"] = df["decade"].to_numpy()
-    extra["genre_filter"] = genre_cat
+    extra["genre_filter"] = genre_single.to_numpy()  # all 65, un-bucketed
     extra["rating_filter"] = rating_cat
     extra["editions_filter"] = df["sku_count"].to_numpy(dtype=int)
+    extra["year_filter"] = df["year"].fillna(0).astype(int).to_numpy()
+    extra["runtime_filter"] = runtime_num.where(runtime_num > 0).fillna(0).astype(int).to_numpy()
+    extra["popularity_filter"] = pop_num.where(pop_num > 0).fillna(-1.0).round(2).to_numpy()
 
     rawdata = [year_num, genre_cat, fmt_cat, rating_cat, editions]
     metadata = [
@@ -441,7 +447,7 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
 
     # Post-render: attribution + faster zoom, then the Advanced Filters panel.
     html = postprocess_html(out.read_text())
-    config = build_filter_config(df, genre_cat, fmt_cat, rating_cat)
+    config = build_filter_config(df, genre_single, fmt_cat, rating_cat)
     html = inject_filter_panel(html, config)
     out.write_text(html)
     n_filters = sum(len(s["filters"]) for s in config["sections"])
