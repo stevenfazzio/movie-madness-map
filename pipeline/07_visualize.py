@@ -71,8 +71,8 @@ ATTRIBUTION_HTML = """
 
 
 # DataMapPlot hardcodes the deck.gl scroll-zoom at speed 0.01 (datamap.js),
-# which feels sluggish; bump it. 0.02 = 2x, noticeably snappier but still smooth.
-ZOOM_SPEED = 0.02
+# which feels sluggish; bump it. 0.04 = 4x the default — snappy but still smooth.
+ZOOM_SPEED = 0.04
 
 
 def postprocess_html(html: str) -> str:
