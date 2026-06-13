@@ -70,6 +70,23 @@ ATTRIBUTION_HTML = """
 """
 
 
+# DataMapPlot hardcodes the deck.gl scroll-zoom at speed 0.01 (datamap.js),
+# which feels sluggish; bump it. 0.02 = 2x, noticeably snappier but still smooth.
+ZOOM_SPEED = 0.02
+
+
+def postprocess_html(html: str) -> str:
+    """Apply our post-render patches to a DataMapPlot HTML string: attribution
+    footer + faster scroll-zoom. Shared so already-rendered files can be patched
+    in place without a full re-render."""
+    html, n = re.subn(r"</body>", ATTRIBUTION_HTML + "</body>", html, count=1)
+    assert n == 1, "no </body> found for attribution injection"
+    # Minified controller config: scrollZoom:{speed:0.01,smooth:true}
+    html, n = re.subn(r"(scrollZoom:\{speed:)[0-9.]+", rf"\g<1>{ZOOM_SPEED}", html, count=1)
+    assert n == 1, "scroll-zoom speed token not found (datamapplot internals changed?)"
+    return html
+
+
 def categorical_color_mapping(values, default=None, default_color="#c9ccd1"):
     uniques = sorted(set(map(str, values)))
     others = [v for v in uniques if v != default]
@@ -282,11 +299,8 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     out = map_html(variant)
     fig.save(str(out))
 
-    # Post-render: attribution footer (data courtesy demands it; see CLAUDE.md).
-    html = out.read_text()
-    html, n_sub = re.subn(r"</body>", ATTRIBUTION_HTML + "</body>", html, count=1)
-    assert n_sub == 1, "no </body> found for attribution injection"
-    out.write_text(html)
+    # Post-render: attribution footer + faster scroll-zoom (see postprocess_html).
+    out.write_text(postprocess_html(out.read_text()))
     print(f"  [{variant}] saved {out} ({out.stat().st_size / 1e6:.1f} MB)")
 
     dh = docs_html(variant)
