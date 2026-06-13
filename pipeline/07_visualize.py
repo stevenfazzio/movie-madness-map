@@ -15,6 +15,7 @@ Output:  data/movie_map_<variant>.html  (+ copied to docs/<variant>.html)
 from __future__ import annotations
 
 import re
+from collections import Counter
 from html import escape
 
 import datamapplot
@@ -81,7 +82,22 @@ def categorical_color_mapping(values, default=None, default_color="#c9ccd1"):
 
 def _fill_nonfinite(a):
     a = np.asarray(a, dtype=float)
-    return np.where(np.isfinite(a), a, np.nanmedian(a))
+    finite = a[np.isfinite(a)]
+    fill = np.median(finite) if finite.size else 0.0  # all-NaN (e.g. tiny smoke subset) -> 0
+    return np.where(np.isfinite(a), a, fill)
+
+
+def pick_coarse_genre(genre_lists: pd.Series) -> pd.Series:
+    """One coarse genre per film for the colormap. Films carry 0-4 genres (99.4%
+    have 1); when >1, pick the GLOBALLY RAREST so a film isn't swallowed by the
+    huge 'Foreign' bucket (a Foreign+Horror film colors as Horror). Empty -> Other."""
+    counts = Counter(g for gs in genre_lists for g in (gs if isinstance(gs, (list, np.ndarray)) else []))
+
+    def pick(gs):
+        gs = list(gs) if isinstance(gs, (list, np.ndarray)) else []
+        return min(gs, key=lambda g: (counts[g], g)) if gs else "Other"
+
+    return genre_lists.map(pick)
 
 
 def format_bucket(formats: list) -> str:
@@ -151,6 +167,18 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
         f'<div style="margin-top:4px;font-size:11px;opacity:.65">{escape(c)}</div>' if c else ""
         for c in df["cast_str"].fillna("")
     ]
+    # Coarse-genre hover line, deduped against the fine shelf sections (drop a
+    # coarse token already shown as a section, e.g. "Comedy"); omit if nothing left.
+    genre_html = []
+    for genres, sections in zip(df["genres_coarse"], df["sections"]):
+        sec_lower = {s.lower() for s in sections}
+        coarse = [g for g in (genres if isinstance(genres, (list, np.ndarray)) else []) if g.lower() not in sec_lower]
+        genre_html.append(
+            f'<div style="margin-top:6px;font-size:11px;color:#7a9a6a">Genre: {escape("; ".join(coarse))}</div>'
+            if coarse
+            else ""
+        )
+    rating_clean = df["rating"].fillna("N/R").replace({"": "N/R", "N/": "N/R"})
 
     extra = pd.DataFrame(
         {
@@ -161,7 +189,7 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
             "synopsis": synopsis.to_numpy(),
             "shelf": shelf_str.to_numpy(),
             "formats": [escape(f) for f in df["formats_str"].fillna("")],
-            "rating": [escape(r) if r else "NR" for r in df["rating"].fillna("")],
+            "rating": [escape(r) for r in rating_clean],
             "mm_url": df["mm_url"].fillna("").to_numpy(),
         }
     )
@@ -173,55 +201,62 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
         '<span style="font-weight:400;opacity:.7">({year})</span></div>'
         '<div style="margin-top:3px;font-size:11px;opacity:.8">{byline}</div>'
         '<div style="margin-top:5px;font-size:12px;line-height:1.4">{synopsis}</div>'
-        '<div style="margin-top:6px;font-size:11px;color:#9a6a00">Shelf: {shelf}</div>'
+        "{genre}"
+        '<div style="margin-top:4px;font-size:11px;color:#9a6a00">Shelf: {shelf}</div>'
         '<div style="margin-top:3px;font-size:11px;opacity:.7">{formats} &nbsp;·&nbsp; {rating}</div>'
         "{cast}"
         "</div>"
     )
     extra["cast"] = cast_html
+    extra["genre"] = genre_html
 
     hover_text = (df["title"].fillna("") + " " + df["director"].fillna("") + " " + df["cast_str"].fillna("")).to_numpy()
 
     # --- colormaps ---
     year_num = _fill_nonfinite(df["year"].to_numpy(dtype=float))
-    section_cat = bucket_top_n(df["section_primary"].fillna("Unshelved"), 28).to_numpy()
+    # Coarse store genre (75 values) bucketed to top-15 + "Other" — the store's
+    # top-level shelf family ("Horror" of "Horror > Stalker Films").
+    genre_cat = bucket_top_n(pick_coarse_genre(df["genres_coarse"]), 15).to_numpy()
     fmt_cat = df["formats"].map(format_bucket).to_numpy()
-    rating_cat = df["rating"].fillna("N/R").replace("", "N/R").to_numpy()
+    rating_cat = rating_clean.to_numpy()
     editions = df["sku_count"].to_numpy(dtype=float).clip(1, 10)
 
-    rawdata = [year_num, section_cat, fmt_cat, rating_cat, editions]
+    rawdata = [year_num, genre_cat, fmt_cat, rating_cat, editions]
     metadata = [
         {"field": "year", "description": "Release year", "kind": "continuous", "cmap": "viridis"},
         {
-            "field": "section",
-            "description": "Store shelf section",
+            "field": "store_genre",
+            "description": "Genre (store, coarse)",
             "kind": "categorical",
-            "color_mapping": categorical_color_mapping(section_cat, default="Other"),
+            "color_mapping": categorical_color_mapping(genre_cat, default="Other"),
         },
         {"field": "format", "description": "Format", "kind": "categorical", "color_mapping": FORMAT_COLORS},
         {
             "field": "rating",
             "description": "MPAA rating",
             "kind": "categorical",
-            "color_mapping": {**RATING_COLORS, **categorical_color_mapping(rating_cat, default="N/R")},
+            # RATING_COLORS spread LAST so the hand-picked green->red palette wins
+            # over the glasbey fallback (which only needs to cover stray values).
+            "color_mapping": {**categorical_color_mapping(rating_cat, default="N/R"), **RATING_COLORS},
         },
         {"field": "editions", "description": "Editions in stock (1-10+)", "kind": "continuous", "cmap": "YlGnBu"},
     ]
 
     # TMDB-derived colormaps only exist on an enriched corpus (stage 02 run).
     if df["matched"].fillna(False).any():
-        genre_cat = df["tmdb_genre_primary"].fillna("—").to_numpy()
+        tmdb_genre_cat = df["tmdb_genre_primary"].fillna("—").to_numpy()
         pop = df["popularity"].to_numpy(dtype=float)
         pop_log = np.log10(np.where(np.isfinite(pop) & (pop > 0), pop, np.nan))
-        pop_log = np.where(np.isfinite(pop_log), pop_log, np.nanmin(pop_log[np.isfinite(pop_log)]))
+        finite_pop = pop_log[np.isfinite(pop_log)]
+        pop_log = np.where(np.isfinite(pop_log), pop_log, finite_pop.min() if finite_pop.size else 0.0)
         runtime_num = _fill_nonfinite(df["runtime"].to_numpy(dtype=float)).clip(40, 240)
-        rawdata += [genre_cat, pop_log, runtime_num]
+        rawdata += [tmdb_genre_cat, pop_log, runtime_num]
         metadata += [
             {
                 "field": "tmdb_genre",
                 "description": "Genre (TMDB)",
                 "kind": "categorical",
-                "color_mapping": categorical_color_mapping(genre_cat, default="—"),
+                "color_mapping": categorical_color_mapping(tmdb_genre_cat, default="—"),
             },
             {"field": "popularity", "description": "TMDB popularity (log)", "kind": "continuous", "cmap": "inferno"},
             {"field": "runtime", "description": "Runtime (min)", "kind": "continuous", "cmap": "cividis"},

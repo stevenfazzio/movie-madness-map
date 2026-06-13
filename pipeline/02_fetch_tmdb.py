@@ -16,6 +16,7 @@ Requires TMDB_API_KEY in .env (v3 key or v4 read token both work).
 """
 
 import os
+import re
 import tempfile
 from difflib import SequenceMatcher
 
@@ -83,6 +84,19 @@ def _spell_numbers(key: str) -> str:
     return " ".join(_NUM_WORDS.get(tok, tok) for tok in key.split())
 
 
+# Roman numerals -> arabic, so catalog "A Better Tomorrow 2" meets TMDB
+# "A Better Tomorrow II". Only multi-char numerals (ii, iii, iv...) — single
+# "i"/"v"/"x"/"l" are far too often real words/titles ("X", "I, Robot") to touch.
+_ROMAN = {
+    "ii": "2", "iii": "3", "iv": "4", "vi": "6", "vii": "7", "viii": "8",
+    "ix": "9", "xi": "11", "xii": "12", "xiii": "13", "xiv": "14", "xv": "15",
+}  # fmt: skip
+
+
+def _to_arabic(key: str) -> str:
+    return " ".join(_ROMAN.get(tok, tok) for tok in key.split())
+
+
 def _strip_article(key: str) -> str:
     for art in ("the ", "a ", "an "):
         if key.startswith(art) and len(key) > len(art) + 3:
@@ -96,27 +110,51 @@ def similarity(a: str, b: str) -> float:
         return 0.0
     if ka == kb:
         return 1.0
-    sim = SequenceMatcher(None, ka, kb).ratio()
+    # Compare under several equivalence-preserving normalizations: raw,
+    # digit<->word numbers, and roman<->arabic numerals. Exact match under any
+    # one is a match; otherwise take the best fuzzy ratio.
+    sim = 0.0
+    for fa, fb in ((ka, kb), (_spell_numbers(ka), _spell_numbers(kb)), (_to_arabic(ka), _to_arabic(kb))):
+        if fa == fb:
+            return 1.0
+        sim = max(sim, SequenceMatcher(None, fa, fb).ratio())
     # The catalog drops/keeps leading articles inconsistently ("Andy Griffith
     # Show" vs TMDB "The Andy Griffith Show") — equal-modulo-article is a match.
     if _strip_article(ka) == _strip_article(kb):
         sim = max(sim, 0.95)
-    sa, sb = _spell_numbers(ka), _spell_numbers(kb)
-    if (sa, sb) != (ka, kb):
-        sim = max(sim, 1.0 if sa == sb else SequenceMatcher(None, sa, sb).ratio())
-    # One title extending the other ("12 rounds 2" vs "12 rounds 2 reloaded"):
-    # near-certain same film when the year also agrees (the year gate still
-    # applies in score_candidate). Length guard keeps "10" from claiming
-    # "10,000 Saints".
-    if min(len(ka), len(kb)) >= 8 and (ka.startswith(kb) or kb.startswith(ka)):
-        sim = max(sim, 0.95)
     return sim
+
+
+def _prefix_extension(query: str, cand_title: str) -> bool:
+    """True when one normalized title is a clean prefix of the other AND the
+    boundary falls at a word break (not mid-word). Word-boundary kills the
+    classic false positive 'The Experiment' -> 'The Experiment|al Film'."""
+    kq, kc = norm_key(query), norm_key(cand_title)
+    short, lng = sorted((kq, kc), key=len)
+    if len(short) < 8 or not lng.startswith(short):
+        return False
+    return lng[len(short)] == " "
 
 
 def score_candidate(cand: dict, title: str, year, is_tv: bool) -> float:
     cand_title = cand.get("name") if is_tv else cand.get("title")
     cand_orig = cand.get("original_name") if is_tv else cand.get("original_title")
     sim = max(similarity(title, cand_title or ""), similarity(title, cand_orig or ""))
+
+    # Prefix-extension bonus ("12 Rounds 2" -> "12 Rounds 2: Reloaded") is
+    # DIRECTIONAL and risky — a short catalog title can prefix an unrelated
+    # longer work ("Zeitgeist" -> "Zeitgeist Stammheim", 0 votes). Only award it
+    # when the longer title is a genuine subtitle (": "/" - " separator) OR the
+    # candidate is a real, voted-on film. Otherwise a 0-vote decoy slips through.
+    if sim < 0.95:
+        for ct in (cand_title, cand_orig):
+            if ct and _prefix_extension(title, ct):
+                longer = title if len(title) >= len(ct) else ct
+                has_subtitle = bool(re.search(r"[:\-–]", longer))
+                if has_subtitle or (cand.get("vote_count") or 0) > 2:
+                    sim = max(sim, 0.95)
+                break
+
     date = cand.get("first_air_date") if is_tv else cand.get("release_date")
     cand_year = int(date[:4]) if date and len(date) >= 4 and date[:4].isdigit() else None
     if pd.isna(year) or year is None or cand_year is None:

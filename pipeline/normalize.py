@@ -74,6 +74,12 @@ def strip_tags(title: str) -> tuple[str, int | None, list[str]]:
             year = int(m.group(1))
             t = t[: m.start()].rstrip()
             continue
+        # A trailing bare number like "X (5)" is a volume/disc marker — part of
+        # the film's identity, not a strippable tag. Keep it on the title so
+        # distinct volumes don't collapse into one film_key. (4-digit years were
+        # already consumed above.)
+        if re.search(r"\(\s*\d{1,3}\s*\)\s*$", t) and t[: t.rstrip().rfind("(")].strip(" -–:"):
+            break
         m = _ANY_PAREN_RE.search(t)
         if m and t[: m.start()].strip(" -–:"):  # never strip down to nothing
             if not _TAG_RE.search(t):  # known tags are noise; the rest are qualifiers

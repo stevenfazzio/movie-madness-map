@@ -4,13 +4,16 @@ Reads  data/catalog_raw.parquet + data/taxonomy_terms.parquet
 Writes data/films_base.parquet — one row per film (normalized title + year),
        with formats/sections/etc. as lists and the best catalog synopsis.
 
-Grouping key: norm_key(title) + year (from the `date` taxonomy, falling back to
-a year embedded in the title). TV seasons stay separate films because the season
-suffix is part of the title. Same-title-same-year remakes collide; accepted.
+Grouping: norm_key(title), then year-clustered (see canonical_year_map) so a
+film's re-release years collapse to one node while genuine remakes stay separate.
+Per-SKU year prefers an in-title (YYYY) over the `date` taxonomy. TV seasons stay
+separate films (season suffix is in the title). Same-title-same-year remakes
+collide; accepted.
 """
 
 import html as html_mod
 import re
+from collections import Counter
 
 import pandas as pd
 from config import CATALOG_RAW_PARQUET, FILMS_BASE_PARQUET, RENTAL_TAXONOMIES, TAXONOMY_TERMS_PARQUET
@@ -33,6 +36,32 @@ def pick_display_title(titles: pd.Series) -> str:
     return best.title() if best.isupper() else best
 
 
+# Re-release years shatter one film into many ("Army of Darkness" tagged 1992
+# AND 1993). Within a film_key, cluster years by single linkage and only split
+# when a gap >= YEAR_SPLIT_GAP appears, so genuine remakes (Of Mice and Men
+# 1939/1968) stay separate. Each cluster's canonical year is its modal SKU year
+# (ties -> earliest), keeping film_id pinned to the dominant edition.
+YEAR_SPLIT_GAP = 3
+
+
+def canonical_year_map(years: list[int]) -> dict[int, int]:
+    """Map each observed SKU year to its cluster's canonical (modal) year."""
+    if not years:
+        return {}
+    counts = Counter(years)
+    clusters: list[list[int]] = []
+    for y in sorted(counts):
+        if clusters and y - clusters[-1][-1] < YEAR_SPLIT_GAP:
+            clusters[-1].append(y)
+        else:
+            clusters.append([y])
+    out: dict[int, int] = {}
+    for cluster in clusters:
+        canon = max(cluster, key=lambda y: (counts[y], -y))  # modal, tie -> earliest
+        out.update({y: canon for y in cluster})
+    return out
+
+
 def main() -> None:
     skus = pd.read_parquet(CATALOG_RAW_PARQUET)
     terms = pd.read_parquet(TAXONOMY_TERMS_PARQUET)
@@ -50,11 +79,11 @@ def main() -> None:
     parsed = pd.DataFrame([parse_catalog_title(t) for t in skus["title_raw"]], index=skus.index)
     skus = pd.concat([skus, parsed], axis=1)
 
-    # Year: `date` taxonomy first (term names are years), title-embedded fallback.
+    # Per-SKU year: the in-title (YYYY) wins when present — staff place it
+    # specifically to disambiguate remakes — else the `date` taxonomy year.
     # The catalog has typo years ("1000", "7079"); out-of-range -> missing.
     def year_of(row) -> int | None:
-        candidates = [int(n) for n in row["date"] if n.isdigit() and len(n) == 4]
-        candidates.append(row["title_year"])
+        candidates = [row["title_year"]] + [int(n) for n in row["date"] if n.isdigit() and len(n) == 4]
         for y in candidates:
             if y is not None and not pd.isna(y) and 1888 <= y <= 2027:
                 return int(y)
@@ -62,16 +91,28 @@ def main() -> None:
 
     skus["year"] = skus.apply(year_of, axis=1).astype("Int64")
     skus["synopsis_catalog"] = skus["content_html"].map(strip_html)
-    skus["group_key"] = skus["film_key"] + "|" + skus["year"].astype(str)
+
+    # --- group SKUs into films (see canonical_year_map above) ---
+    def subgroup_id(g: pd.DataFrame) -> pd.Series:
+        years = [int(y) for y in g["year"].dropna()]
+        cmap = canonical_year_map(years)
+        modal = max(cmap.values(), key=lambda c: sum(1 for y in years if cmap[y] == c)) if cmap else None
+        # Missing-year SKUs attach to the modal cluster; if the key has no dated
+        # SKU at all, the film is year-unknown ("na").
+        return g["year"].map(lambda y: str(cmap[int(y)]) if pd.notna(y) else (str(modal) if modal else "na"))
+
+    skus["canon_year"] = skus.groupby("film_key", sort=False, group_keys=False).apply(subgroup_id, include_groups=False)
+    skus["group_key"] = skus["film_key"] + "|" + skus["canon_year"]
 
     def collapse(g: pd.DataFrame) -> pd.Series:
         synopses = [s for s in g["synopsis_catalog"] if s]
+        canon = g["canon_year"].iloc[0]
         return pd.Series(
             {
                 "title": pick_display_title(g["title_display"]),
                 "title_base": g["title_base"].iloc[0],
                 "season": g["season"].iloc[0],
-                "year": g["year"].iloc[0],
+                "year": pd.NA if canon == "na" else int(canon),
                 "synopsis_catalog": max(synopses, key=len) if synopses else "",
                 "formats": sorted({f for fs in g["format"] for f in fs}),
                 "sections": sorted({s for ss in g["location"] for s in ss}),

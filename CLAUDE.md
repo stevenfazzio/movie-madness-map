@@ -38,19 +38,58 @@ Toponymy (Claude naming) → DataMapPlot → GitHub Pages (`docs/`).
   pagination, `per_page=100`, `orderby=id&order=asc` for stable paging;
   `X-WP-Total` header carries the count; robots.txt is fully permissive).
 - Six taxonomies on it: `format`, `rating`, `date` (year-as-term — it SHADOWS
-  WP's core post `date` field in responses), `genre` (~mirrors top-level
-  section), `location` (the famous hand-curated shelf sections, 572 terms),
-  `language`. Term ids are unique across WP taxonomies, so one global id→name
-  map is safe.
+  WP's core post `date` field in responses), `genre`, `location`, `language`.
+  Term ids are unique across WP taxonomies, so one global id→name map is safe.
+- **The store's two-level "MM LOCATION" ("Horror › Stalker Films") is split
+  across TWO taxonomies**: `genre` = the COARSE level ("Horror", 75 values in
+  use / 78 published), `location` = the FINE shelf ("Stalker Films", 557 in use
+  / 572 published). It is NOT a clean tree — 61% of fine shelves map to one
+  coarse genre, but cross-cutting shelves ("New Arrival" spans 64 genres, "Staff
+  Picks", "Curated") and name collisions break it; the website breadcrumb is a
+  per-rental display of one (genre, location) pair, not a global parent. The
+  coarse `genre` also mixes in inventory states (`*New Release`, `Library`,
+  `Head Cleaner`…) — stage 03 stoplists 11 of them. Stage 07 colors by coarse
+  genre (top-15 + greyed "Other"); stage 03 embeds coarse+fine as one deduped
+  `Categories:` line in the shelf variant.
 - **Director/actor are NOT in the REST API** (they render only in the site's
   htmx search dialogs, backed by a "movie-madness-maven" plugin + `data-mmdb-id`
   attrs). We get cast/crew from TMDB instead; don't bother scraping the dialogs.
 - Posters in the catalog are nearly all placeholders; TMDB is the poster source.
 - Catalog titles encode inventory in parentheses: `"Fighter, The (1952) (DVD-R)"`,
-  `"Totem (2023) (Latin American) (DVD)"`. `pipeline/normalize.py` strips ALL
-  trailing parentheticals (year captured; unknown ones kept as `qualifiers`),
-  un-inverts articles incl. mid-title (`"Conqueror, The: Hollywood Fallout"`),
+  `"Totem (2023) (Latin American) (DVD)"`. `pipeline/normalize.py` strips trailing
+  parentheticals (year captured; unknown ones kept as `qualifiers`) EXCEPT a bare
+  `(N)` volume marker which stays in the title so anime "X (5)"/"X (6)" don't
+  merge; un-inverts articles incl. mid-title (`"Conqueror, The: Hollywood Fallout"`),
   and splits season suffixes. It has real tests — `make test` after touching it.
+
+## Decisions & QA (2026-06-13 — colormap/genre rerun)
+
+After a 4-reviewer QA pass (data integrity, TMDB matches, embed-text, viz),
+these landed in one rerun:
+- **Colormap recolored to coarse genre** (top-15 + greyed "Other"), multi-genre
+  films colored by their globally-RAREST genre so "Foreign" (13.5k) doesn't
+  swallow everything (`pick_coarse_genre`, stage 07). Coarse genre also added to
+  the hover (deduped vs the fine `Shelf:` line) and to the shelf embed text.
+- **Year false-split collapse** (stage 01 `canonical_year_map`): a film's
+  re-release years (Army of Darkness 1992+1993) merge to one node; remakes
+  (Of Mice and Men 1939/1968) stay separate via a ≥3yr gap. ~1,300 films merged.
+  Per-SKU year now prefers an in-title `(YYYY)` over the `date` taxonomy.
+- **TMDB prefix-match guard** (stage 02): the prefix-extension bonus was matching
+  short catalog titles to longer unrelated works ("The Experiment"→"The
+  Experimental Film", "Zeitgeist"→"Zeitgeist Stammheim"). Now requires a word
+  boundary AND (a subtitle separator `:`/`-` OR `vote_count>2`). ~700 FPs fixed.
+- **Digit↔Roman numeral matching** (stage 02 `_to_arabic`): recovers sequels
+  ("A Better Tomorrow 2" ↔ "II"). Roman only for multi-char numerals (ii, iii…)
+  to avoid clobbering "X"/"I, Robot".
+- **Stoplists** (stage 03): 11 inventory pseudo-genres dropped from `genre`;
+  store-shorthand qualifiers (`Si`, `G/L`…) dropped from shelf text; synopsis
+  run through `unescape + whitespace-collapse`.
+- **Rating colormap bug** (stage 07): hand-picked green→red palette was being
+  overridden by the glasbey fallback (merge order) — fixed; `N/`→`N/R`.
+- **Decisions deferred/declined**: adult content stays fully visible (no NSFW
+  filter — user's call); About page / OG-social meta / VHS-format-decade filter
+  panel deferred to a later render-only pass. TMDB backfill for title-only films
+  NOT pursued (low yield, risky per QA).
 
 ## Conventions
 

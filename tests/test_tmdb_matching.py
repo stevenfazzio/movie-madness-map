@@ -64,6 +64,7 @@ def test_digit_vs_word_numbers():
 
 
 def test_tmdb_side_subtitle_extension():
+    # real subtitle separator (":") -> prefix bonus applies even at 0 votes
     cand = movie("12 Rounds 2: Reloaded", "2013-06-04")
     s = tmdb.score_candidate(cand, "12 Rounds 2", 2013, is_tv=False)
     assert s >= tmdb.ACCEPT_THRESHOLD
@@ -72,6 +73,48 @@ def test_tmdb_side_subtitle_extension():
 def test_short_prefix_does_not_overclaim():
     # "10" must not claim "10,000 Saints" via the prefix rule
     assert tmdb.similarity("10", "10,000 Saints") < 0.9
+
+
+def test_roman_numeral_sequel():
+    cand = movie("A Better Tomorrow II", "1987-08-15")
+    s = tmdb.score_candidate(cand, "A Better Tomorrow 2", 1987, is_tv=False)
+    assert s >= tmdb.ACCEPT_THRESHOLD
+
+
+def test_prefix_fp_killed_by_low_votes_no_separator():
+    # "Zeitgeist" -> "Zeitgeist Stammheim" (0 votes, no subtitle separator): reject
+    cand = {
+        "title": "Zeitgeist Stammheim",
+        "original_title": "Zeitgeist Stammheim",
+        "release_date": "2009-01-01",
+        "vote_count": 0,
+    }
+    s = tmdb.score_candidate(cand, "Zeitgeist", 2009, is_tv=False)
+    assert s < tmdb.ACCEPT_THRESHOLD
+
+
+def test_prefix_fp_killed_by_midword_boundary():
+    # "The Experiment" -> "The Experiment|al Film": mid-word boundary, reject
+    cand = {
+        "title": "The Experimental Film",
+        "original_title": "The Experimental Film",
+        "release_date": "2000-01-01",
+        "vote_count": 0,
+    }
+    s = tmdb.score_candidate(cand, "The Experiment", 2000, is_tv=False)
+    assert s < tmdb.ACCEPT_THRESHOLD
+
+
+def test_prefix_kept_for_popular_film():
+    # genuine canonical-short-title -> full title, high votes: accept
+    cand = {
+        "title": "Dr. Strangelove or: How I Learned to Stop Worrying and Love the Bomb",
+        "original_title": "Dr. Strangelove",
+        "release_date": "1964-01-29",
+        "vote_count": 6000,
+    }
+    s = tmdb.score_candidate(cand, "Dr. Strangelove", 1964, is_tv=False)
+    assert s >= tmdb.ACCEPT_THRESHOLD
 
 
 def test_leading_article_insensitive():
