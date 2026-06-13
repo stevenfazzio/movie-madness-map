@@ -87,9 +87,54 @@ these landed in one rerun:
 - **Rating colormap bug** (stage 07): hand-picked green→red palette was being
   overridden by the glasbey fallback (merge order) — fixed; `N/`→`N/R`.
 - **Decisions deferred/declined**: adult content stays fully visible (no NSFW
-  filter — user's call); About page / OG-social meta / VHS-format-decade filter
-  panel deferred to a later render-only pass. TMDB backfill for title-only films
-  NOT pursued (low yield, risky per QA).
+  filter — user's call); About page + OpenGraph/social meta still deferred (a
+  later render-only pass). TMDB backfill for title-only films NOT pursued (low
+  yield, risky per QA). (The filter panel, once deferred, was built — see below.)
+
+## Stage 07 interactive layer (post-render, added 2026-06-13)
+
+Everything here is **render-only**: change it and re-run `07_visualize.py`
+(~2 min, both variants); no embed/UMAP/Toponymy rerun. `07` renders with
+DataMapPlot, then `postprocess_html` (attribution footer + scroll-zoom bump to
+`ZOOM_SPEED=0.04`, both regex patches on the minified output) and
+`inject_filter_panel` patch the HTML.
+
+- **Advanced Filters panel** is vendored at `pipeline/filter_panel.html` (split
+  by `<!-- SECTION: css/html/js -->`), ported from `../steam-atlas` /
+  `../huggingface-dataset-map`. We re-themed it by **self-defining its CSS vars**
+  (`--brass`/`--cyan`/`--ink*`…) in a `:root` block — the steam-atlas host page
+  defined them, our DataMapPlot HTML doesn't. The container needs
+  `container-box interactive-element` or the `pointer-events:none` UI layer
+  eats clicks. `PARAM_KEY_MAP` + the match-count label were localized.
+- **Injection** (`inject_filter_panel`): the panel bootstraps off a
+  `datamapReady` CustomEvent we dispatch right after the unique anchor
+  `const hoverData = parsedData;` (deferred a tick via setTimeout so
+  `addMetaData` + legends are ready). **This anchor is datamapplot-version-
+  specific** — if a datamapplot upgrade changes the loader, the `assert` fires
+  and you re-find the anchor. Panel HTML is inserted after `#search-container`,
+  CSS into `<head>`, JS before `</html>`.
+- **Filters read per-point values from dedicated `*_filter` columns in
+  `extra_point_data`** (NOT the colormap rawdata; those are separate `_r/_g/_b/_a`
+  columns). `build_filter_config` defines them.
+- **multiValue gotcha (cost real debugging):** a checkbox filter over data where
+  a film has SEVERAL values (format, genre) MUST be multi-value — encode the set
+  as a `"|"`-joined string and the panel matches if ANY value is checked
+  (`multiValue:true`). Single-bucket coercion (`format_bucket`, rarest-genre) is
+  for the COLORMAP only (one color/point); using it for a checkbox hides
+  multi-format films (Parenthood on 4K+Blu-ray+DVD vanished under a Blu-ray-only
+  filter). `rating` is genuinely single-value, so it stays scalar.
+- **Range sliders** (year / runtime / popularity / editions): missing values
+  encode as a sentinel strictly **below the slider min** (0 for year & runtime,
+  -1 for popularity) so undated/unmatched films show at reset but drop out once
+  the slider is touched. Heavy-tailed fields (runtime, popularity) cap the slider
+  at the 99th percentile (`capLabel` → "180+"). Years use `plainInt:true` so 1894
+  renders "1894" not "2K"/"1,894".
+- **Search corpus** (`hover_text`, DataMapPlot substring-matches it):
+  title + director + cast + shelf sections + edition qualifiers (Criterion/A24).
+  Synopsis deliberately excluded — common words would flood the unranked match.
+- **Genre filter lists all 65 coarse genres** (not the colormap's top-15+Other),
+  so it's decoupled from the colormap legend; only `format`/`rating` are
+  legend-synced via `colormapFieldToFilterId`.
 
 ## Conventions
 
