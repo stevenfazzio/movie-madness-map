@@ -227,7 +227,19 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     extra["cast"] = cast_html
     extra["genre"] = genre_html
 
-    hover_text = (df["title"].fillna("") + " " + df["director"].fillna("") + " " + df["cast_str"].fillna("")).to_numpy()
+    # Search corpus (DataMapPlot substring-matches this): title + people + the
+    # store's shelf sections, so "noir"/"kung fu"/"criterion" find the right
+    # shelf. Synopsis is deliberately excluded — its common words ("love",
+    # "war") would flood the substring match and dilute title/person lookup.
+    section_search = df["sections"].map(lambda s: " ".join(s) if len(s) else "")
+    qual_search = df["qualifiers"].map(lambda q: " ".join(q) if len(q) else "")  # Criterion, A24, Arrow...
+    hover_text = (
+        df["title"].fillna("")
+        + " " + df["director"].fillna("")
+        + " " + df["cast_str"].fillna("")
+        + " " + section_search
+        + " " + qual_search
+    ).to_numpy()
 
     # --- colormaps ---
     year_num = _fill_nonfinite(df["year"].to_numpy(dtype=float))
