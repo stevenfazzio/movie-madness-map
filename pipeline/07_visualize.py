@@ -2,21 +2,27 @@
 
 Layout: one point per film, positioned by stage 05's UMAP of that variant's
 embeddings. Hover shows poster (when TMDB matched), title/year, director, the
-synopsis, the store shelf section, formats, and rating; clicking a point opens
-the film's search page on moviemadness.org ("go rent it"). A colormap dropdown
-covers decade, shelf section, format, rating, TMDB genre/popularity, runtime,
-and how many editions the store stocks. Toponymy region names float on top.
+synopsis, coarse genre, the store shelf section, formats, and rating; clicking a
+point opens the film's search page on moviemadness.org ("go rent it"). A colormap
+dropdown covers year, coarse genre, format, rating, editions, and TMDB
+genre/popularity/runtime. Toponymy region names float on top.
 
-Inputs:  data/umap_coords_<variant>.npz, data/films.parquet,
+Post-render patches (see postprocess_html / inject_filter_panel): attribution
+footer, faster scroll-zoom, and the composable "Advanced Filters" panel
+(format / decade / genre / rating / editions) vendored from filter_panel.html.
+
+Inputs:  data/umap_coords_<variant>.npz, data/films.parquet, pipeline/filter_panel.html,
          [optional] data/toponymy_labels_<variant>.parquet
 Output:  data/movie_map_<variant>.html  (+ copied to docs/<variant>.html)
 """
 
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from html import escape
+from pathlib import Path
 
 import datamapplot
 import glasbey
@@ -33,6 +39,8 @@ from config import (
     umap_npz,
 )
 from matplotlib.colors import to_hex
+
+FILTER_PANEL_TEMPLATE = Path(__file__).resolve().parent / "filter_panel.html"
 
 VARIANT_BLURB = {
     "synopsis": "layout: what the films are about",
@@ -84,6 +92,117 @@ def postprocess_html(html: str) -> str:
     # Minified controller config: scrollZoom:{speed:0.01,smooth:true}
     html, n = re.subn(r"(scrollZoom:\{speed:)[0-9.]+", rf"\g<1>{ZOOM_SPEED}", html, count=1)
     assert n == 1, "scroll-zoom speed token not found (datamapplot internals changed?)"
+    return html
+
+
+def _alpha_other_last(values) -> list[str]:
+    out = sorted(set(map(str, values)))
+    if "Other" in out:
+        out.remove("Other")
+        out.append("Other")
+    return out
+
+
+def build_filter_config(df: pd.DataFrame, genre_cat, fmt_cat, rating_cat) -> dict:
+    """Assemble the JSON consumed by FilterPanel in filter_panel.html. Each
+    filter's `field` is an extra_point_data column the panel reads per-point;
+    `colormapFieldToFilterId` ties a filter to its colormap legend for opacity sync."""
+    fmt_order = ["4K UHD", "Blu-Ray", "DVD", "VHS only", "Other"]
+    present_fmt = set(fmt_cat)
+    format_values = [f for f in fmt_order if f in present_fmt]
+
+    decades = set(df["decade"])
+    decade_values = sorted(d for d in decades if d != "Unknown")
+    if "Unknown" in decades:
+        decade_values.append("Unknown")
+
+    rating_order = ["G", "PG", "PG-13", "R", "NC-17", "X", "N/R"]
+    present_rt = set(rating_cat)
+    rating_values = [r for r in rating_order if r in present_rt] + sorted(present_rt - set(rating_order))
+
+    editions = df["sku_count"].astype(int)
+    sections = [
+        {
+            "label": "Format & Era",
+            "filters": [
+                {
+                    "name": "format", "filterId": "filter-format", "label": "Format",
+                    "field": "format_filter", "values": format_values,
+                },
+                {
+                    "name": "decade", "filterId": "filter-decade", "label": "Decade",
+                    "field": "decade_filter", "values": decade_values,
+                },
+            ],
+        },
+        {
+            "label": "Categories",
+            "filters": [
+                {
+                    "name": "genre", "filterId": "filter-genre", "label": "Genre (coarse)",
+                    "field": "genre_filter", "values": _alpha_other_last(genre_cat),
+                },
+                {
+                    "name": "rating", "filterId": "filter-rating", "label": "MPAA Rating",
+                    "field": "rating_filter", "values": rating_values,
+                },
+            ],
+        },
+        {
+            "label": "Stock",
+            "filters": [
+                {
+                    "type": "range", "name": "editions", "filterId": "filter-editions",
+                    "label": "Editions in stock", "field": "editions_filter",
+                    "min": int(editions.min()), "max": int(editions.max()),
+                    "sliderMax": int(editions.max()), "step": 1, "compact": True, "capLabel": False,
+                },
+            ],
+        },
+    ]
+    colormap_to_filter = {
+        "store_genre": "filter-genre",
+        "format": "filter-format",
+        "rating": "filter-rating",
+    }
+    return {
+        "totalCount": int(len(df)),
+        "sections": sections,
+        "colormapFieldToFilterId": colormap_to_filter,
+        "filterIdToColormapField": {v: k for k, v in colormap_to_filter.items()},
+    }
+
+
+def inject_filter_panel(html: str, config: dict) -> str:
+    """Inject the Advanced Filters panel: dispatch a `datamapReady` event once
+    datamap+hoverData are live, then patch the panel's CSS/HTML/JS into the page.
+    Ported from steam-atlas / huggingface-dataset-map (see CLAUDE.md)."""
+    # 1. Bootstrap: fire datamapReady after metadata is attached. `const hoverData
+    #    = parsedData;` is the unique point where both globals are in scope; defer
+    #    a tick so datamap.addMetaData (and its colormap legends) finish first.
+    anchor = "const hoverData = parsedData;"
+    dispatch = (
+        anchor
+        + "\n      setTimeout(function(){ try { window.dispatchEvent(new CustomEvent("
+        "'datamapReady', { detail: { datamap: datamap, hoverData: hoverData } })); } "
+        "catch(e){ console.error('datamapReady dispatch failed', e); } }, 0);"
+    )
+    assert html.count(anchor) == 1, "filter injection: hoverData anchor not found/unique"
+    html = html.replace(anchor, dispatch, 1)
+
+    template = FILTER_PANEL_TEMPLATE.read_text()
+    parts = re.split(r"<!-- SECTION: (\w+) -->", template)
+    section = {parts[i]: parts[i + 1].strip() for i in range(1, len(parts), 2)}
+
+    html = html.replace("</head>", section["css"] + "\n</head>", 1)
+
+    search_re = re.compile(r'(<div id="search-container" class="container-box[^"]*">\s*<input[^>]*/>\s*</div>)')
+    m = search_re.search(html)
+    assert m, "filter injection: search-container div not found"
+    html = html[: m.end()] + "\n      " + section["html"] + "\n" + html[m.end() :]
+
+    js = section["js"].replace("__FILTER_CONFIG_JSON__", json.dumps(config))
+    html = html.replace("</html>", js + "\n</html>", 1)
     return html
 
 
@@ -250,6 +369,15 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     rating_cat = rating_clean.to_numpy()
     editions = df["sku_count"].to_numpy(dtype=float).clip(1, 10)
 
+    # Per-point values the Advanced Filters panel reads (extra_point_data cols,
+    # distinct from the colormap _r/_g/_b/_a columns; same arrays so a filter and
+    # its colormap legend agree). Range filter wants real counts, not the clip.
+    extra["format_filter"] = fmt_cat
+    extra["decade_filter"] = df["decade"].to_numpy()
+    extra["genre_filter"] = genre_cat
+    extra["rating_filter"] = rating_cat
+    extra["editions_filter"] = df["sku_count"].to_numpy(dtype=int)
+
     rawdata = [year_num, genre_cat, fmt_cat, rating_cat, editions]
     metadata = [
         {"field": "year", "description": "Release year", "kind": "continuous", "cmap": "viridis"},
@@ -311,9 +439,13 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     out = map_html(variant)
     fig.save(str(out))
 
-    # Post-render: attribution footer + faster scroll-zoom (see postprocess_html).
-    out.write_text(postprocess_html(out.read_text()))
-    print(f"  [{variant}] saved {out} ({out.stat().st_size / 1e6:.1f} MB)")
+    # Post-render: attribution + faster zoom, then the Advanced Filters panel.
+    html = postprocess_html(out.read_text())
+    config = build_filter_config(df, genre_cat, fmt_cat, rating_cat)
+    html = inject_filter_panel(html, config)
+    out.write_text(html)
+    n_filters = sum(len(s["filters"]) for s in config["sections"])
+    print(f"  [{variant}] saved {out} ({out.stat().st_size / 1e6:.1f} MB) + {n_filters} filters")
 
     dh = docs_html(variant)
     dh.parent.mkdir(exist_ok=True)
