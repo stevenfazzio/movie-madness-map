@@ -111,15 +111,18 @@ def _range_filter(name, field, label, lo, hi, slider_max, cap_label, plain_int=F
     }
 
 
-def build_filter_config(df: pd.DataFrame, genre_single, fmt_cat, rating_cat) -> dict:
+def build_filter_config(df: pd.DataFrame, format_cats, genre_cats, rating_cat) -> dict:
     """Assemble the JSON consumed by FilterPanel in filter_panel.html. Each
     filter's `field` is an extra_point_data column the panel reads per-point.
-    Checkbox: format / genre (all 65) / rating. Range: year / runtime /
+    Checkbox: format / genre (all 65) / rating. format and genre are MULTI-VALUE
+    (a film matches if ANY of its values is checked). Range: year / runtime /
     popularity / editions. `colormapFieldToFilterId` syncs a filter to its
     colormap legend (genre is excluded — its filter is finer than the colormap)."""
     fmt_order = ["4K UHD", "Blu-Ray", "DVD", "VHS only", "Other"]
-    present_fmt = set(fmt_cat)
+    present_fmt = {c for cats in format_cats for c in cats}
     format_values = [f for f in fmt_order if f in present_fmt]
+
+    genre_values = _alpha_other_last({g for cats in genre_cats for g in cats})
 
     rating_order = ["G", "PG", "PG-13", "R", "NC-17", "X", "N/R"]
     present_rt = set(rating_cat)
@@ -137,9 +140,9 @@ def build_filter_config(df: pd.DataFrame, genre_single, fmt_cat, rating_cat) -> 
             "label": "Categories",
             "filters": [
                 {"name": "format", "filterId": "filter-format", "label": "Format",
-                 "field": "format_filter", "values": format_values},
+                 "field": "format_filter", "values": format_values, "multiValue": True},
                 {"name": "genre", "filterId": "filter-genre", "label": "Genre (coarse)",
-                 "field": "genre_filter", "values": _alpha_other_last(genre_single)},
+                 "field": "genre_filter", "values": genre_values, "multiValue": True},
                 {"name": "rating", "filterId": "filter-rating", "label": "MPAA Rating",
                  "field": "rating_filter", "values": rating_values},
             ],
@@ -235,6 +238,7 @@ def pick_coarse_genre(genre_lists: pd.Series) -> pd.Series:
 
 
 def format_bucket(formats: list) -> str:
+    """Single bucket per film — for the COLORMAP (one color per point)."""
     fset = set(formats)
     if fset == {"VHS"}:
         return "VHS only"
@@ -245,6 +249,28 @@ def format_bucket(formats: list) -> str:
     if any(f.startswith("DVD") for f in fset):
         return "DVD"
     return "Other"
+
+
+_FORMAT_COVERED = {"4K UHD", "Blu-Ray", "Blu-Ray 3D", "DVD", "DVD-R", "VHS"}
+
+
+def format_categories(formats: list) -> list[str]:
+    """The SET of format buckets a film qualifies for — for the multi-select
+    FILTER, so a film on 4K+Blu-ray+DVD matches any of those checkboxes (not just
+    the colormap's priority bucket). 'VHS only' stays exclusive (formats=={VHS})."""
+    fset = set(formats)
+    cats = []
+    if "4K UHD" in fset:
+        cats.append("4K UHD")
+    if any("Blu-Ray" in f for f in fset):
+        cats.append("Blu-Ray")
+    if any(f.startswith("DVD") for f in fset):
+        cats.append("DVD")
+    if fset == {"VHS"}:
+        cats.append("VHS only")
+    if not cats or (fset - _FORMAT_COVERED):  # Book/Laserdisc/etc., or nothing matched
+        cats.append("Other")
+    return cats
 
 
 def bucket_top_n(values: pd.Series, n: int, other="Other") -> pd.Series:
@@ -376,8 +402,13 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     # out the moment that slider is touched — see build_filter_config.
     runtime_num = pd.to_numeric(df["runtime"], errors="coerce")
     pop_num = pd.to_numeric(df["popularity"], errors="coerce")
-    extra["format_filter"] = fmt_cat
-    extra["genre_filter"] = genre_single.to_numpy()  # all 65, un-bucketed
+    # format & genre are MULTI-VALUE: a film can be on several formats / in
+    # several genres, so the checkbox filter must match ANY of them. Encode the
+    # set as a "|"-joined string the panel splits (see filter_panel.html).
+    format_cats = df["formats"].map(format_categories)
+    genre_cats = df["genres_coarse"].map(lambda gs: list(gs) if len(gs) else ["Other"])
+    extra["format_filter"] = format_cats.map("|".join).to_numpy()
+    extra["genre_filter"] = genre_cats.map("|".join).to_numpy()
     extra["rating_filter"] = rating_cat
     extra["editions_filter"] = df["sku_count"].to_numpy(dtype=int)
     extra["year_filter"] = df["year"].fillna(0).astype(int).to_numpy()
@@ -447,7 +478,7 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
 
     # Post-render: attribution + faster zoom, then the Advanced Filters panel.
     html = postprocess_html(out.read_text())
-    config = build_filter_config(df, genre_single, fmt_cat, rating_cat)
+    config = build_filter_config(df, format_cats, genre_cats, rating_cat)
     html = inject_filter_panel(html, config)
     out.write_text(html)
     n_filters = sum(len(s["filters"]) for s in config["sections"])

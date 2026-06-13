@@ -419,6 +419,7 @@ window.plausible = window.plausible || function() {};
               initialChecked: f.initialChecked,
               resetTo: f.resetTo,
               startCollapsed: f.startCollapsed !== false, // default true
+              multiValue: !!f.multiValue, // field is a "|"-joined set (format, genre)
             });
           }
         }
@@ -459,7 +460,7 @@ window.plausible = window.plausible || function() {};
     }
 
     initCheckboxFilter(name, filterId, opts) {
-      const { label, field, values, initialChecked, resetTo, startCollapsed } = opts;
+      const { label, field, values, initialChecked, resetTo, startCollapsed, multiValue } = opts;
       const group = document.createElement('div');
       group.className = 'filter-group';
 
@@ -496,7 +497,11 @@ window.plausible = window.plausible || function() {};
       });
 
       const checkboxes = group.querySelectorAll('input[type="checkbox"]');
-      const fieldValues = this.hoverData[field];
+      // multiValue fields hold a "|"-joined SET per point (a film can be on
+      // several formats / in several genres); pre-split so a point matches if
+      // ANY of its values is checked. Single-value fields stay scalar.
+      const raw = this.hoverData[field];
+      const fieldValues = multiValue ? raw.map(s => String(s).split('|')) : raw;
 
       // resetTo defaults to "all values" — a permissive reset. For Content Rating
       // we override resetTo so Reset returns to the safer initial state rather
@@ -508,6 +513,7 @@ window.plausible = window.plausible || function() {};
         values,
         group,
         name,
+        multiValue,
         resetTo: resetTo || values.slice(),
       };
 
@@ -640,7 +646,9 @@ window.plausible = window.plausible || function() {};
       } else {
         const indices = [];
         for (let i = 0; i < f.fieldValues.length; i++) {
-          if (checked.has(f.fieldValues[i])) {
+          const fv = f.fieldValues[i];
+          const hit = f.multiValue ? fv.some(v => checked.has(v)) : checked.has(fv);
+          if (hit) {
             indices.push(i);
           }
         }
