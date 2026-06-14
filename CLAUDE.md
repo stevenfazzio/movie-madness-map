@@ -5,7 +5,7 @@ pipeline list; this file adds conventions, decisions, and gotchas.
 
 ## What this is
 
-An interactive 2D semantic map of the Movie Madness rental catalog (~98.8k SKUs
+An interactive 2D map of the Movie Madness rental catalog (~98.8k SKUs
 → ~one-dot-per-film), sibling of `../jeopardy-map` (the lean spine this is
 ported from), `../taskmaster-map`, `../steam-atlas`, `../huggingface-dataset-map`.
 Spine: fetch → dedupe → TMDB-enrich → corpus → embed (Cohere) → UMAP →
@@ -133,8 +133,9 @@ these landed in one rerun:
 Everything here is **render-only**: change it and re-run `07_visualize.py`
 (~2 min, both variants); no embed/UMAP/Toponymy rerun. `07` renders with
 DataMapPlot, then `postprocess_html` (attribution footer + scroll-zoom bump to
-`ZOOM_SPEED=0.04`, both regex patches on the minified output),
-`inject_filter_panel`, and `inject_mobile_support` patch the HTML.
+`ZOOM_SPEED=0.04`, both regex patches on the minified output), `inject_site_nav`,
+`inject_filter_panel`, `inject_mobile_support`, and `inject_point_labels` patch
+the HTML.
 
 - **Advanced Filters panel** is vendored at `pipeline/filter_panel.html` (split
   by `<!-- SECTION: css/html/js -->`), ported from `../steam-atlas` /
@@ -292,6 +293,33 @@ change (filters/search/legend fire it WITHOUT a view-state change, so
 drives the opacity fade, the cull also makes a narrow filter/search surface its
 labels early (don't have to zoom into a sparse region first). We wrap
 FilterPanel's own `highlightPoints` wrapper (its empty-match fix), so both run.
+
+### Site nav bar + About page (`inject_site_nav`, added 2026-06-14)
+
+A fixed translucent top bar (Map / About) injected after `<body>` on both variant
+maps, plus a hand-authored standalone `docs/about.html`. Mirrors the sibling -map
+projects' nav (oeisdata-map, huggingface-dataset-map, semantic-github-map) — same
+44px frosted-glass bar, `.active` underline — but **re-themed dark** (those are
+light-mode teal-on-white; ours is `--ink`/`--brass`, accent `#e0b34e`).
+
+- **Bar floats OVER the full-height deck canvas** (frosted `rgba(14,14,17,0.82)` +
+  `blur(8px)`), so deck/body heights are untouched; only `.stack.top-left` and
+  `.stack.top-right` get `margin-top:44px` so DataMapPlot's title/search and the
+  colormap legend clear the strip. (Contrast semantic-github, which subtracts 44px
+  from the heights — see the note in `inject_mobile_support`.)
+- **Scope is deliberately minimal** (decided with Steven 2026-06-14): nav links
+  only the primary map (`index.html`) + `about.html`. The `synopsis.html` variant
+  stays reachable by direct URL only — it gets the same bar but "Map" points at
+  the shelf map, not itself. `about.html` is a **stub** (nav + title + tagline +
+  a "coming soon" notice + attribution footer); real methodology copy is TODO.
+- **The nav CSS is duplicated** in two places that must stay in sync: `SITE_NAV_HTML`
+  in `07_visualize.py` (Map active) and the inline `<style>` in `docs/about.html`
+  (About active). `about.html` is standalone — it does NOT go through the injection
+  pipeline, so it self-defines the `:root` palette (copied from `filter_panel.html`)
+  and loads IBM Plex Sans from Google Fonts itself.
+- `docs/about.html` is the only About copy (lives in the Pages dir). The `data/`
+  working maps get a nav whose About link 404s locally — preview over the `docs/`
+  dir, which is self-contained.
 
 ## Conventions
 

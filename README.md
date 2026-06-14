@@ -1,6 +1,6 @@
 # Movie Madness Map
 
-An interactive 2D semantic map of the rental catalog of [Movie Madness](https://www.moviemadness.org/) —
+An interactive 2D map of the rental catalog of [Movie Madness](https://www.moviemadness.org/) —
 the Portland, Oregon nonprofit video store (run by the [Hollywood Theatre](https://hollywoodtheatre.org/))
 whose collection of ~90,000 titles on DVD, Blu-ray, 4K, and VHS is one of the largest physical-media
 libraries in the world.

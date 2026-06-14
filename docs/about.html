@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>About · Movie Madness Map</title>
+  <meta name="description" content="About the Movie Madness Map — an interactive 2D map of the rental catalog at Portland's Movie Madness." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* Dark palette — mirrors the :root block in pipeline/filter_panel.html so this
+       standalone page matches the injected map chrome. */
+    :root {
+      --ink: #0e0e11; --ink-2: #17171b; --ink-3: #1f1f24; --ink-4: #2a2a31;
+      --text: #f1f1f3; --text-dim: #c6c6cc; --text-faint: #8b8b93;
+      --brass: #e0b34e; --brass-glow: rgba(224, 179, 78, 0.22); --cyan: #6fc0cf;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      background: var(--ink); color: var(--text);
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      line-height: 1.65; -webkit-font-smoothing: antialiased;
+    }
+
+    /* Site nav — KEEP IN SYNC with SITE_NAV_HTML in pipeline/07_visualize.py
+       (here "About" is the active link). */
+    .site-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+      background: rgba(14, 14, 17, 0.82); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--ink-4, #2a2a31);
+      padding: 0 24px; height: 44px; display: flex; align-items: center; gap: 24px;
+      font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 14px; font-weight: 500; }
+    .site-nav a { color: var(--text-dim, #c6c6cc); text-decoration: none; transition: color 0.15s; }
+    .site-nav a:hover { color: var(--brass, #e0b34e); }
+    .site-nav a.active { color: var(--brass, #e0b34e); border-bottom: 2px solid var(--brass, #e0b34e); line-height: 42px; }
+    @media (max-width: 768px) { .site-nav { padding: 0 12px; gap: 16px; font-size: 13px; } }
+
+    main { max-width: 720px; margin: 0 auto; padding: 92px 24px 72px; }
+    .eyebrow { text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px;
+      font-weight: 600; color: var(--brass); margin: 0 0 12px; }
+    h1 { font-size: clamp(28px, 5vw, 40px); font-weight: 600; line-height: 1.15; margin: 0 0 12px; }
+    .tagline { font-size: 18px; color: var(--text-dim); margin: 0 0 40px; max-width: 56ch; }
+
+    /* Placeholder notice — replace this whole section with real methodology copy. */
+    .notice { border: 1px solid var(--ink-4); border-left: 3px solid var(--brass);
+      background: var(--ink-2); border-radius: 6px; padding: 20px 22px; }
+    .notice h2 { font-size: 16px; font-weight: 600; margin: 0 0 6px; }
+    .notice p { margin: 0; color: var(--text-dim); }
+    .notice a { color: var(--cyan); }
+
+    footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--ink-4);
+      font-size: 12px; color: var(--text-faint); }
+    footer a { color: var(--text-dim); text-decoration: none; }
+    footer a:hover { color: var(--brass); }
+  </style>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="index.html">Map</a>
+    <a href="about.html" class="active">About</a>
+  </nav>
+
+  <main>
+    <p class="eyebrow">About</p>
+    <h1>Movie Madness Map</h1>
+    <p class="tagline">Every title on the shelves of Portland's Movie Madness, laid out by what it's about.</p>
+
+    <!-- TODO: replace this placeholder with the real About / methodology content. -->
+    <section class="notice">
+      <h2>Methodology &amp; credits — coming soon</h2>
+      <p>This page will explain how the map is built: where the catalog comes from, how each
+         film is placed, and how the regions are named. For now, head back to the
+         <a href="index.html">map</a>.</p>
+    </section>
+
+    <footer>
+      Catalog:
+      <a href="https://www.moviemadness.org/" target="_blank" rel="noopener">Movie Madness</a>,
+      a nonprofit video store in Portland, OR (Hollywood Theatre) &middot;
+      Film metadata &amp; posters:
+      <a href="https://www.themoviedb.org/" target="_blank" rel="noopener">TMDB</a>
+      (this product uses the TMDB API but is not endorsed or certified by TMDB).
+    </footer>
+  </main>
+</body>
+</html>

@@ -97,6 +97,48 @@ def postprocess_html(html: str) -> str:
     return html
 
 
+# ── Site nav bar (Map / About) ────────────────────────────────────────────────
+# A fixed translucent top bar linking each map to the standalone About page,
+# mirroring the sibling -map projects (oeisdata-map, huggingface-dataset-map,
+# semantic-github-map) — but re-themed dark to match this map (those are
+# light-mode, teal-on-white; we're ink + brass). The bar floats OVER the
+# full-height deck canvas (frosted glass), so deck/body heights are untouched;
+# only DataMapPlot's corner stacks are nudged down 44px so the title (top-left)
+# and legend (top-right) clear the strip. Injected into both variant maps with
+# "Map" active. The About page (docs/about.html) is a hand-authored standalone
+# file carrying an IDENTICAL nav block with "About" active — keep the two CSS
+# copies in sync. Render-only (re-run stage 07 to apply; see CLAUDE.md).
+SITE_NAV_HTML = """
+<style>
+.site-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+  background: rgba(14, 14, 17, 0.82); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--ink-4, #2a2a31);
+  padding: 0 24px; height: 44px; display: flex; align-items: center; gap: 24px;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 14px; font-weight: 500; pointer-events: auto; }
+.site-nav a { color: var(--text-dim, #c6c6cc); text-decoration: none; transition: color 0.15s; }
+.site-nav a:hover { color: var(--brass, #e0b34e); }
+.site-nav a.active { color: var(--brass, #e0b34e); border-bottom: 2px solid var(--brass, #e0b34e); line-height: 42px; }
+/* Push DataMapPlot's top corners below the bar so the title/search (top-left) and
+   the colormap legend (top-right) aren't clipped by the translucent strip. */
+.stack.top-left, .stack.top-right { margin-top: 44px; }
+@media (max-width: 768px) { .site-nav { padding: 0 12px; gap: 16px; font-size: 13px; } }
+</style>
+<nav class="site-nav">
+  <a href="index.html" class="active">Map</a>
+  <a href="about.html">About</a>
+</nav>
+"""
+
+
+def inject_site_nav(html: str) -> str:
+    """Splice the Map/About nav bar in right after the <body> tag (both variant
+    maps; "Map" is the active link). String-in/string-out so already-rendered
+    files can be patched in place, like postprocess_html. See SITE_NAV_HTML."""
+    m = re.search(r"<body[^>]*>", html)
+    assert m, "site-nav injection: no <body> tag found"
+    return html[: m.end()] + SITE_NAV_HTML + html[m.end() :]
+
+
 def _alpha_other_last(values) -> list[str]:
     out = sorted(set(map(str, values)))
     if "Other" in out:
@@ -275,9 +317,10 @@ def inject_filter_panel(html: str, config: dict) -> str:
 # the bottom stacks clear the URL bar, scaled title, width clamps), and on touch
 # devices intercept the tap to show a bottom-sheet "info card" with the same
 # fields as the hover tooltip plus an explicit "find it at the store" button.
-# Ported/re-themed from ../semantic-github-map (which is light-mode and has a top
-# nav bar — we're dark-mode with no nav, so the card reuses the filter panel's
-# dark :root vars and heights are a plain 100dvh). Render-only (see CLAUDE.md).
+# Ported/re-themed from ../semantic-github-map (which is light-mode and subtracts
+# its 44px top nav from the heights). Our slim Map/About nav (SITE_NAV_HTML)
+# floats over the full-height canvas instead, so the card reuses the filter
+# panel's dark :root vars and heights stay a plain 100dvh. Render-only (see CLAUDE.md).
 # Phase 2 (mobile legend popover, filter-panel drawer, drag-suppression) is TODO.
 
 VIEWPORT_META = '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -290,8 +333,9 @@ MOBILE_CSS = """<style>
   .container-box { margin: 3px 8px !important; padding: 8px 10px !important; }
   /* Mobile 100vh bug: vh counts the area behind the URL bar, pushing the bottom
      row of stacks (colormap, legend) under the browser chrome. dvh tracks the
-     visible viewport. No nav bar here, so it's a plain 100dvh (semantic-github
-     subtracts its 44px nav). */
+     visible viewport. The site-nav floats OVER the full-height canvas, so the
+     deck/body heights stay a plain 100dvh; only the top corner stacks shift down
+     44px (see SITE_NAV_HTML). */
   body { height: 100dvh !important; }
   #deck-container { height: 100dvh !important; }
   .content-wrapper { height: 100dvh !important; min-height: 100dvh !important; }
@@ -1102,6 +1146,7 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     # Post-render: attribution + faster zoom, the Advanced Filters panel, then
     # the mobile layer (viewport meta + touch info card).
     html = postprocess_html(out.read_text())
+    html = inject_site_nav(html)
     config = build_filter_config(df, format_cats, genre_cats, rating_cat)
     html = inject_filter_panel(html, config)
     html = inject_mobile_support(html)
