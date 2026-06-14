@@ -310,6 +310,28 @@ MOBILE_CSS = """<style>
   .color-map-options { max-height: 50dvh !important; }
   /* The deck.gl hover tooltip is replaced by the bottom-sheet card on touch. */
   .deck-tooltip { display: none !important; }
+  /* Phase 2: show the mobile legend popover (the desktop legend in .top-right
+     stays hidden — we mirror its content into the popover). */
+  #mobile-legend-popover { display: block !important; }
+  /* Phase 2: fuller-width filter panel + finger-sized controls. The whole
+     checkbox row is a <label>, so taller padding alone widens the tap target;
+     the 14px box is left as-is (its :checked checkmark is positioned for 14px). */
+  #filter-container { max-width: calc(100vw - 16px) !important; }
+  #filter-container.open { width: calc(100vw - 16px) !important; }
+  .filter-range-wrapper { height: 28px !important; }
+  .filter-range-track, .filter-range-fill { top: 12px !important; }
+  .filter-range-wrapper input[type="range"] { height: 28px !important; }
+  .filter-range-wrapper input[type="range"]::-webkit-slider-thumb { width: 20px !important; height: 20px !important; }
+  .filter-range-wrapper input[type="range"]::-moz-range-thumb { width: 20px !important; height: 20px !important; }
+  .filter-checkbox-item { padding: 6px 2px !important; }
+  /* Phase 2: the attribution and the colormap selector both sit bottom-left and
+     overlapped on short viewports. Lift the attribution into a centered,
+     full-width line just above the colormap (which stays at the very bottom). */
+  #mm-attribution {
+    left: 0 !important; right: 0 !important; bottom: 72px !important;
+    max-width: none !important; text-align: center !important;
+    font-size: 9px !important; line-height: 1.35 !important; padding: 0 10px !important;
+  }
 }
 
 /* Touch info card — dark bottom sheet. Reuses the filter panel's :root palette;
@@ -348,11 +370,62 @@ MOBILE_CSS = """<style>
   text-decoration: none; border-radius: 8px;
 }
 #mobile-info-card .mic-visit:active { background: #c99a30; }
+
+/* Phase 2: mobile legend popover — mirrors the desktop #legend-container, which
+   datamapplot hides on mobile (it's in .top-right). Hidden on desktop; the
+   @media block shows it. Fixed bottom-right, opposite the colormap selector. */
+#mobile-legend-popover {
+  display: none;
+  position: fixed;
+  right: 10px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  z-index: 150;
+  pointer-events: auto;
+}
+#mobile-legend-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px 12px;
+  border: 1px solid var(--rule, #34343c);
+  border-radius: 9px;
+  background: var(--ink-2, #17171b);
+  color: var(--text-dim, #c6c6cc);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 12px; font-weight: 500;
+  cursor: pointer; pointer-events: auto;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.mobile-legend-content {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 8px); right: 0;
+  background: var(--ink-2, #17171b);
+  border: 1px solid var(--rule, #34343c);
+  border-radius: 11px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+  padding: 10px 12px;
+  max-height: 60dvh; overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  min-width: 150px;
+  color: var(--text, #f1f1f3);
+}
+/* Re-apply sizing to the copied legend content — datamapplot's own legend CSS is
+   scoped under #legend-container, so the innerHTML copy loses it. */
+.mobile-legend-content .legend-label { font-size: 11px !important; }
+.mobile-legend-content .color-swatch-box { width: 11px !important; height: 11px !important; }
+.mobile-legend-content .colorbar-container { height: 140px !important; padding: 6px !important; }
+.mobile-legend-content .colorbar { height: 140px !important; }
+.mobile-legend-content .colorbar-tick-container { height: 140px !important; }
+.mobile-legend-content .colorbar-tick-label { font-size: 10px !important; }
 </style>"""
 
 MOBILE_INFOCARD_HTML = """<div id="mobile-info-card">
   <button class="mic-close" type="button" aria-label="Close">×</button>
   <div class="mic-body"></div>
+</div>"""
+
+MOBILE_LEGEND_HTML = """<div id="mobile-legend-popover">
+  <div class="mobile-legend-content"></div>
+  <button id="mobile-legend-toggle" type="button">Legend +</button>
 </div>"""
 
 MOBILE_JS = """<script>
@@ -383,6 +456,22 @@ MOBILE_JS = """<script>
     if (Date.now() - lastOpen < 400) return;
     hideCard();
   });
+
+  // Drag-suppression (Phase 2): onHover fires continuously during a pan, which
+  // would pop the card for every point the finger crosses. Track movement since
+  // pointerdown and treat anything past ~10px as a pan. onClick is unaffected —
+  // deck.gl only fires it on a genuine tap, not a drag.
+  var dragStart = null, isDrag = false;
+  window.addEventListener('pointerdown', function(e) {
+    dragStart = { x: e.clientX, y: e.clientY };
+    isDrag = false;
+  }, true);
+  window.addEventListener('pointermove', function(e) {
+    if (!dragStart) return;
+    var dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
+    if (dx * dx + dy * dy > 100) isDrag = true;
+  }, true);
+  window.addEventListener('pointerup', function() { dragStart = null; }, true);
 
   window.addEventListener('datamapReady', function(e) {
     var datamap = e.detail && e.detail.datamap;
@@ -445,8 +534,8 @@ MOBILE_JS = """<script>
     //    empty-space tap; the store link lives on the card's button instead.
     //  - onHover: on touch this fires reliably on tap across the whole canvas,
     //    where onClick alone often misses points in the upper area (deck.gl
-    //    synthetic-click timing). Trade-off: it can also pop the card while
-    //    panning — a known rough edge to judge on-device (drag-suppress = Ph.2).
+    //    synthetic-click timing). It also fires during a pan, so it's gated on
+    //    the isDrag flag (above) to avoid popping the card mid-pan.
     datamap.deckgl.setProps({
       getTooltip: null,
       onClick: function(info) {
@@ -454,26 +543,86 @@ MOBILE_JS = """<script>
         else hideCard();
       },
       onHover: function(info) {
+        if (isDrag) return;
         if (info && info.picked) showMobileCard(info.index);
       }
     });
   });
 })();
+</script>
+<script>
+// Mobile legend popover (Phase 2): mirror the desktop #legend-container — which
+// datamapplot hides on mobile — into a bottom-right toggle. Not touch-gated; the
+// @media block controls visibility, so it works on any narrow viewport.
+(function() {
+  var popover = document.getElementById('mobile-legend-popover');
+  if (!popover) return;
+  var toggle = document.getElementById('mobile-legend-toggle');
+  var content = popover.querySelector('.mobile-legend-content');
+  var open = false;
+
+  toggle.addEventListener('click', function(e) {
+    e.stopPropagation();
+    open = !open;
+    content.style.display = open ? 'block' : 'none';
+    toggle.innerHTML = open ? 'Legend −' : 'Legend +';
+  });
+  document.addEventListener('click', function(e) {
+    if (open && !popover.contains(e.target)) {
+      open = false;
+      content.style.display = 'none';
+      toggle.innerHTML = 'Legend +';
+    }
+  });
+
+  // datamapplot keeps one child per colormap in #legend-container and shows only
+  // the active one (inline display); mirror that child. Hide the toggle if the
+  // active colormap has no legend.
+  function sync() {
+    var src = document.getElementById('legend-container');
+    if (!src) return;
+    var vis = null;
+    for (var i = 0; i < src.children.length; i++) {
+      if (src.children[i].style.display !== 'none') { vis = src.children[i]; break; }
+    }
+    if (vis && vis.innerHTML.trim()) {
+      content.innerHTML = vis.innerHTML;
+      toggle.style.removeProperty('display');
+    } else {
+      content.innerHTML = '';
+      open = false;
+      content.style.display = 'none';
+      toggle.innerHTML = 'Legend +';
+      toggle.style.setProperty('display', 'none', 'important');
+    }
+  }
+  var src = document.getElementById('legend-container');
+  if (src) {
+    new MutationObserver(sync).observe(src, {
+      childList: true, subtree: true, attributes: true, attributeFilter: ['style']
+    });
+  }
+  window.addEventListener('datamapReady', function() { setTimeout(sync, 300); });
+  setTimeout(sync, 1000);  // fallback if datamapReady already fired
+})();
 </script>"""
 
 
 def inject_mobile_support(html: str) -> str:
-    """Phase 1 mobile patches: viewport meta + a max-width:768px stylesheet +
-    a touch-only bottom-sheet info card (tap a point -> card with the hover
-    fields and a 'find it at the store' button, instead of navigating away).
+    """Mobile patches (Phase 1 + 2): viewport meta + a max-width:768px stylesheet
+    + a touch-only bottom-sheet info card (tap a point -> card with the hover
+    fields and a 'find it at the store' button, instead of navigating away) + a
+    mobile legend popover (mirrors the desktop legend datamapplot hides on
+    mobile). The card's onHover is drag-suppressed so panning doesn't pop it.
     String-in/string-out like postprocess_html, so it can also patch an
-    already-rendered file. Desktop is untouched (the JS early-returns off touch).
-    Run after inject_filter_panel — it relies on that function's datamapReady
-    event and on the attribution patch having re-added </body>."""
+    already-rendered file. Desktop is untouched (the card JS early-returns off
+    touch; the legend popover is hidden by CSS above 768px). Run after
+    inject_filter_panel — it relies on that function's datamapReady event and on
+    the attribution patch having re-added </body>."""
     assert html.count("</head>") == 1, "mobile: expected exactly one </head>"
     html = html.replace("</head>", VIEWPORT_META + "\n" + MOBILE_CSS + "\n</head>", 1)
     assert html.count("</body>") == 1, "mobile: expected exactly one </body>"
-    html = html.replace("</body>", MOBILE_INFOCARD_HTML + "\n</body>", 1)
+    html = html.replace("</body>", MOBILE_INFOCARD_HTML + "\n" + MOBILE_LEGEND_HTML + "\n</body>", 1)
     assert html.count("</html>") == 1, "mobile: expected exactly one </html>"
     html = html.replace("</html>", MOBILE_JS + "\n</html>", 1)
     return html

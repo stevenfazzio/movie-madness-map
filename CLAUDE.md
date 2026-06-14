@@ -136,7 +136,7 @@ DataMapPlot, then `postprocess_html` (attribution footer + scroll-zoom bump to
   so it's decoupled from the colormap legend; only `format`/`rating` are
   legend-synced via `colormapFieldToFilterId`.
 
-### Mobile support — Phase 1 (`inject_mobile_support`, added 2026-06-13)
+### Mobile support — Phases 1 & 2 (`inject_mobile_support`, 2026-06-13/14)
 
 DataMapPlot's default output isn't touch-friendly two ways: (1) no viewport meta,
 so phones render into a ~980px layout viewport and shrink the legend/filters
@@ -157,8 +157,9 @@ info layer is unreachable on a phone. Phase 1 fixes both; ported/re-themed from
   (`.bottom-left`) and **legend** (`.top-right`). Our block overrides the two that
   matter: `.stack.top-left{max-height:none;overflow-y:visible}` (filter body keeps
   its own `updateFilterBodyHeight` cap, now measured against the visible colormap)
-  and `.stack.bottom-left{display:flex}` (colormap back). Legend stays hidden →
-  Phase-2 popover. **Subtle cause**: adding the viewport meta is what *activated*
+  and `.stack.bottom-left{display:flex}` (colormap back). Legend (`.top-right`)
+  stays hidden; Phase 2 mirrors it into a popover (below). **Subtle cause**:
+  adding the viewport meta is what *activated*
   datamapplot's mobile `@media` — without it phones render at ~980px and it never
   fires, so the desktop layout (scaled) was what shipped pre-mobile.
 - **Touch card** (`isTouchDevice` gate; desktop is untouched): catches the same
@@ -170,17 +171,31 @@ info layer is unreachable on a phone. Phase 1 fixes both; ported/re-themed from
   and the store link moves to a "Find it at the store" button. Card CSS reuses the
   filter panel's dark `:root` vars via `var(--ink-2/--brass/--text…, fallback)`.
 - **Gotchas**: uses `onHover` for the tap (deck.gl's `onClick` misses points in
-  the upper screen area) — trade-off is it can pop the card while panning
-  (Phase 2: drag-suppress). A 400ms guard stops the opening tap from self-closing
+  the upper screen area) — it would pop the card while panning, so Phase 2 gates
+  it on an `isDrag` flag (below). A 400ms guard stops the opening tap from self-closing
   the card via the document outside-click handler. `setPointHighlight` clones the
   point layer with `highlightedObjectIndex` so the highlight survives the card
   overlay's `pointerleave`.
-- **Deferred to Phase 2**: mobile legend popover (desktop colormap legend still
-  shows on mobile, just width-clamped), filter-panel mobile drawer + bigger touch
-  targets, drag-suppression. **Real-device test still owed** — Chrome's desktop
-  minimum window width (and the chrome extension's `resize_window`) can't drop
-  below the 768px breakpoint, so the mobile layout can't be triggered in our usual
-  preview; verify the card/zoom/layout on an actual phone.
+- **Phase 2 (added 2026-06-14)**: (1) **mobile legend popover** — a bottom-right
+  toggle (`#mobile-legend-popover`, injected before `</body>`) that mirrors the
+  active child of the hidden `#legend-container` via a MutationObserver + a
+  `datamapReady` sync; hidden when the colormap has no legend (e.g. Clusters),
+  shown otherwise (semantic-github's pattern, re-themed dark). Always-run, not
+  touch-gated — the `@media` block controls its visibility. (2) **attribution
+  overlap** — on mobile the footer becomes a centered, full-width line lifted to
+  `bottom:72px` so it clears the colormap selector (both had sat bottom-left).
+  (3) **filter touch targets** — fuller-width panel (`100vw-16px`), 20px range
+  thumbs (wrapper 28px, track re-centred to 12px), taller checkbox rows. (4)
+  **drag-suppression** — pointer-move tracking sets an `isDrag` flag; the card's
+  `onHover` ignores hovers once a gesture passes ~10px, so panning no longer pops
+  the card (`onClick` is unaffected — deck only fires it on a real tap).
+- **Verifying mobile here**: the chrome-extension `resize_window` can't drop the
+  viewport below ~1368px, so the `@media` breakpoint won't trigger normally. Flip
+  it on at the current width via the CSSOM (`rule.media.mediaText='all'` for every
+  `max-width<=768` media rule) to exercise the real cascade, and rely on DOM
+  measurements + `elementFromPoint` over screenshots (the dark UI reads as
+  near-black on the dark map, and the extension's viewport drifts between calls).
+  Final visual check is on a real phone.
 
 ## Conventions
 
