@@ -96,8 +96,8 @@ these landed in one rerun:
 Everything here is **render-only**: change it and re-run `07_visualize.py`
 (~2 min, both variants); no embed/UMAP/Toponymy rerun. `07` renders with
 DataMapPlot, then `postprocess_html` (attribution footer + scroll-zoom bump to
-`ZOOM_SPEED=0.04`, both regex patches on the minified output) and
-`inject_filter_panel` patch the HTML.
+`ZOOM_SPEED=0.04`, both regex patches on the minified output),
+`inject_filter_panel`, and `inject_mobile_support` patch the HTML.
 
 - **Advanced Filters panel** is vendored at `pipeline/filter_panel.html` (split
   by `<!-- SECTION: css/html/js -->`), ported from `../steam-atlas` /
@@ -135,6 +135,52 @@ DataMapPlot, then `postprocess_html` (attribution footer + scroll-zoom bump to
 - **Genre filter lists all 65 coarse genres** (not the colormap's top-15+Other),
   so it's decoupled from the colormap legend; only `format`/`rating` are
   legend-synced via `colormapFieldToFilterId`.
+
+### Mobile support — Phase 1 (`inject_mobile_support`, added 2026-06-13)
+
+DataMapPlot's default output isn't touch-friendly two ways: (1) no viewport meta,
+so phones render into a ~980px layout viewport and shrink the legend/filters
+off-screen; (2) the hover tooltip is the only way to see a film's details and it
+doesn't exist on touch — a tap instead fires `on_click` (`onClickFunction`, a
+top-level deck prop) and navigates straight to moviemadness.org, so the whole
+info layer is unreachable on a phone. Phase 1 fixes both; ported/re-themed from
+`../semantic-github-map` (light-mode + has a nav bar — we're dark, no nav).
+
+- **What it injects**: the viewport meta; a `@media (max-width:768px)` block
+  (heights → plain `100dvh` so the bottom-row stacks clear the URL bar — *no*
+  `-44px` nav offset like semantic-github; title scaled 18pt/10pt; colormap
+  width-clamp; hide `.deck-tooltip`); and a touch-only **bottom-sheet info card**.
+- **DataMapPlot's OWN `@media` is hostile to our injected UI (this was the v1
+  regression).** At ≤768px it caps `.top-left` to a `30vh` scrollbox — so
+  title+search+the filter panel become a sliver that scrolls as ONE unit — and
+  `display:none`s 3 of the 4 stacks, hiding the **colormap selector**
+  (`.bottom-left`) and **legend** (`.top-right`). Our block overrides the two that
+  matter: `.stack.top-left{max-height:none;overflow-y:visible}` (filter body keeps
+  its own `updateFilterBodyHeight` cap, now measured against the visible colormap)
+  and `.stack.bottom-left{display:flex}` (colormap back). Legend stays hidden →
+  Phase-2 popover. **Subtle cause**: adding the viewport meta is what *activated*
+  datamapplot's mobile `@media` — without it phones render at ~980px and it never
+  fires, so the desktop layout (scaled) was what shipped pre-mobile.
+- **Touch card** (`isTouchDevice` gate; desktop is untouched): catches the same
+  `datamapReady` event the filter panel uses, then `datamap.deckgl.setProps`
+  overrides the desktop deck props — `getTooltip:null`, and `onClick`/`onHover`
+  show the card instead of navigating. Card fields are read from
+  `datamap.metaData[<field>][idx]` (same `extra_point_data` cols as the hover
+  template: poster/title/year/byline/synopsis/genre/shelf/formats/rating/cast),
+  and the store link moves to a "Find it at the store" button. Card CSS reuses the
+  filter panel's dark `:root` vars via `var(--ink-2/--brass/--text…, fallback)`.
+- **Gotchas**: uses `onHover` for the tap (deck.gl's `onClick` misses points in
+  the upper screen area) — trade-off is it can pop the card while panning
+  (Phase 2: drag-suppress). A 400ms guard stops the opening tap from self-closing
+  the card via the document outside-click handler. `setPointHighlight` clones the
+  point layer with `highlightedObjectIndex` so the highlight survives the card
+  overlay's `pointerleave`.
+- **Deferred to Phase 2**: mobile legend popover (desktop colormap legend still
+  shows on mobile, just width-clamped), filter-panel mobile drawer + bigger touch
+  targets, drag-suppression. **Real-device test still owed** — Chrome's desktop
+  minimum window width (and the chrome extension's `resize_window`) can't drop
+  below the 768px breakpoint, so the mobile layout can't be triggered in our usual
+  preview; verify the card/zoom/layout on an actual phone.
 
 ## Conventions
 

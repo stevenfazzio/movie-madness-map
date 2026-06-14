@@ -7,9 +7,12 @@ point opens the film's search page on moviemadness.org ("go rent it"). A colorma
 dropdown covers year, coarse genre, format, rating, editions, and TMDB
 genre/popularity/runtime. Toponymy region names float on top.
 
-Post-render patches (see postprocess_html / inject_filter_panel): attribution
-footer, faster scroll-zoom, and the composable "Advanced Filters" panel
-(format / decade / genre / rating / editions) vendored from filter_panel.html.
+Post-render patches (see postprocess_html / inject_filter_panel /
+inject_mobile_support): attribution footer, faster scroll-zoom, the composable
+"Advanced Filters" panel (format / decade / genre / rating / editions) vendored
+from filter_panel.html, and a Phase-1 mobile layer (viewport meta + a touch-only
+bottom-sheet info card, so tapping a film on a phone shows its details instead of
+navigating straight to the store).
 
 Inputs:  data/umap_coords_<variant>.npz, data/films.parquet, pipeline/filter_panel.html,
          [optional] data/toponymy_labels_<variant>.parquet
@@ -105,9 +108,18 @@ def _alpha_other_last(values) -> list[str]:
 
 def _range_filter(name, field, label, lo, hi, slider_max, cap_label, plain_int=False) -> dict:
     return {
-        "type": "range", "name": name, "filterId": f"filter-{name}", "label": label,
-        "field": field, "min": int(lo), "max": int(hi), "sliderMax": int(slider_max),
-        "step": 1, "compact": True, "capLabel": cap_label, "plainInt": plain_int,
+        "type": "range",
+        "name": name,
+        "filterId": f"filter-{name}",
+        "label": label,
+        "field": field,
+        "min": int(lo),
+        "max": int(hi),
+        "sliderMax": int(slider_max),
+        "step": 1,
+        "compact": True,
+        "capLabel": cap_label,
+        "plainInt": plain_int,
     }
 
 
@@ -139,12 +151,29 @@ def build_filter_config(df: pd.DataFrame, format_cats, genre_cats, rating_cat) -
         {
             "label": "Categories",
             "filters": [
-                {"name": "format", "filterId": "filter-format", "label": "Format",
-                 "field": "format_filter", "values": format_values, "multiValue": True},
-                {"name": "genre", "filterId": "filter-genre", "label": "Genre (coarse)",
-                 "field": "genre_filter", "values": genre_values, "multiValue": True},
-                {"name": "rating", "filterId": "filter-rating", "label": "MPAA Rating",
-                 "field": "rating_filter", "values": rating_values},
+                {
+                    "name": "format",
+                    "filterId": "filter-format",
+                    "label": "Format",
+                    "field": "format_filter",
+                    "values": format_values,
+                    "multiValue": True,
+                },
+                {
+                    "name": "genre",
+                    "filterId": "filter-genre",
+                    "label": "Genre (coarse)",
+                    "field": "genre_filter",
+                    "values": genre_values,
+                    "multiValue": True,
+                },
+                {
+                    "name": "rating",
+                    "filterId": "filter-rating",
+                    "label": "MPAA Rating",
+                    "field": "rating_filter",
+                    "values": rating_values,
+                },
             ],
         },
         {
@@ -152,16 +181,45 @@ def build_filter_config(df: pd.DataFrame, format_cats, genre_cats, rating_cat) -
             "filters": [
                 # Year: full linear range (no heavy tail to cap); plain int label
                 # so 1894 doesn't render as "2K" or "1,894".
-                _range_filter("year", "year_filter", "Release year",
-                              year.min(), year.max(), year.max(), cap_label=False, plain_int=True),
+                _range_filter(
+                    "year",
+                    "year_filter",
+                    "Release year",
+                    year.min(),
+                    year.max(),
+                    year.max(),
+                    cap_label=False,
+                    plain_int=True,
+                ),
                 # Runtime & popularity are heavy-tailed -> cap the slider at the
                 # 99th percentile; the max handle at cap means "include above".
-                _range_filter("runtime", "runtime_filter", "Runtime (min)",
-                              1, runtime.max(), np.percentile(runtime, 99), cap_label=True),
-                _range_filter("popularity", "popularity_filter", "TMDB popularity",
-                              0, pop.max(), np.percentile(pop, 99), cap_label=True),
-                _range_filter("editions", "editions_filter", "Editions in stock",
-                              editions.min(), editions.max(), editions.max(), cap_label=False),
+                _range_filter(
+                    "runtime",
+                    "runtime_filter",
+                    "Runtime (min)",
+                    1,
+                    runtime.max(),
+                    np.percentile(runtime, 99),
+                    cap_label=True,
+                ),
+                _range_filter(
+                    "popularity",
+                    "popularity_filter",
+                    "TMDB popularity",
+                    0,
+                    pop.max(),
+                    np.percentile(pop, 99),
+                    cap_label=True,
+                ),
+                _range_filter(
+                    "editions",
+                    "editions_filter",
+                    "Editions in stock",
+                    editions.min(),
+                    editions.max(),
+                    editions.max(),
+                    cap_label=False,
+                ),
             ],
         },
     ]
@@ -183,8 +241,7 @@ def inject_filter_panel(html: str, config: dict) -> str:
     #    a tick so datamap.addMetaData (and its colormap legends) finish first.
     anchor = "const hoverData = parsedData;"
     dispatch = (
-        anchor
-        + "\n      setTimeout(function(){ try { window.dispatchEvent(new CustomEvent("
+        anchor + "\n      setTimeout(function(){ try { window.dispatchEvent(new CustomEvent("
         "'datamapReady', { detail: { datamap: datamap, hoverData: hoverData } })); } "
         "catch(e){ console.error('datamapReady dispatch failed', e); } }, 0);"
     )
@@ -204,6 +261,221 @@ def inject_filter_panel(html: str, config: dict) -> str:
 
     js = section["js"].replace("__FILTER_CONFIG_JSON__", json.dumps(config))
     html = html.replace("</html>", js + "\n</html>", 1)
+    return html
+
+
+# ── Mobile support (Phase 1: viewport + touch info card) ──────────────────────
+# DataMapPlot's default output isn't touch-friendly in two ways. (1) No viewport
+# meta tag, so phones render into a ~980px layout viewport and shrink everything
+# (the colormap/legend end up off-screen or microscopic). (2) The only way to see
+# a film's details is the hover tooltip — which doesn't exist on touch, where a
+# tap instead fires on_click and navigates straight to moviemadness.org, so the
+# whole info layer (poster, synopsis, ...) is unreachable on a phone.
+#
+# Fix: inject the viewport meta + a max-width:768px stylesheet (dvh heights so
+# the bottom stacks clear the URL bar, scaled title, width clamps), and on touch
+# devices intercept the tap to show a bottom-sheet "info card" with the same
+# fields as the hover tooltip plus an explicit "find it at the store" button.
+# Ported/re-themed from ../semantic-github-map (which is light-mode and has a top
+# nav bar — we're dark-mode with no nav, so the card reuses the filter panel's
+# dark :root vars and heights are a plain 100dvh). Render-only (see CLAUDE.md).
+# Phase 2 (mobile legend popover, filter-panel drawer, drag-suppression) is TODO.
+
+VIEWPORT_META = '<meta name="viewport" content="width=device-width, initial-scale=1">'
+
+MOBILE_CSS = """<style>
+@media (max-width: 768px) {
+  #title-container span:first-child { font-size: 18pt !important; line-height: 1.1 !important; }
+  #title-container span:last-of-type { font-size: 10pt !important; line-height: 1.2 !important; }
+  #title-container { margin: 4px 8px !important; padding: 8px 10px !important; }
+  .container-box { margin: 3px 8px !important; padding: 8px 10px !important; }
+  /* Mobile 100vh bug: vh counts the area behind the URL bar, pushing the bottom
+     row of stacks (colormap, legend) under the browser chrome. dvh tracks the
+     visible viewport. No nav bar here, so it's a plain 100dvh (semantic-github
+     subtracts its 44px nav). */
+  body { height: 100dvh !important; }
+  #deck-container { height: 100dvh !important; }
+  .content-wrapper { height: 100dvh !important; min-height: 100dvh !important; }
+  /* DataMapPlot's OWN @media(max-width:768px) breaks our injected UI two ways:
+     it caps `.top-left` to `max-height:30vh; overflow-y:auto` — cramming
+     title+search+the filter panel into a sliver that scrolls as ONE unit — and
+     `display:none`s `.top-right`/`.bottom-left`/`.bottom-right`, which hides our
+     colormap selector (it lives in `.bottom-left`). Undo the two that hurt: let
+     `.top-left` grow so the filter body keeps its own scroll cap (set by
+     updateFilterBodyHeight, measured against the colormap), and bring the
+     colormap back. The legend (`.top-right`) stays hidden — Phase 2 popover. */
+  .stack.top-left { max-height: none !important; overflow-y: visible !important; }
+  .stack.bottom-left { display: flex !important; }
+  #colormap-selector-container { max-width: calc(100vw - 24px); }
+  .color-map-options { max-height: 50dvh !important; }
+  /* The deck.gl hover tooltip is replaced by the bottom-sheet card on touch. */
+  .deck-tooltip { display: none !important; }
+}
+
+/* Touch info card — dark bottom sheet. Reuses the filter panel's :root palette;
+   the var() fallbacks keep it self-contained if that CSS ever isn't present. */
+#mobile-info-card {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 300;
+  background: var(--ink-2, #17171b);
+  border-top: 1px solid var(--rule, #34343c);
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.55);
+  padding: 16px 18px calc(env(safe-area-inset-bottom, 8px) + 14px);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  color: var(--text, #f1f1f3);
+  pointer-events: auto;
+  max-height: 62dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+#mobile-info-card.visible { display: block; }
+#mobile-info-card .mic-close {
+  position: absolute; top: 6px; right: 10px;
+  background: none; border: none;
+  font-size: 26px; line-height: 1;
+  color: var(--text-faint, #8b8b93);
+  cursor: pointer; padding: 4px 10px;
+}
+#mobile-info-card .mic-visit {
+  display: inline-block; margin-top: 12px;
+  padding: 10px 18px;
+  background: var(--brass, #e0b34e);
+  color: #1a1407;
+  font-weight: 600; font-size: 14px;
+  text-decoration: none; border-radius: 8px;
+}
+#mobile-info-card .mic-visit:active { background: #c99a30; }
+</style>"""
+
+MOBILE_INFOCARD_HTML = """<div id="mobile-info-card">
+  <button class="mic-close" type="button" aria-label="Close">×</button>
+  <div class="mic-body"></div>
+</div>"""
+
+MOBILE_JS = """<script>
+(function() {
+  // Touch only — desktop keeps the hover tooltip and click-to-store behavior.
+  var isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  if (!isTouchDevice) return;
+
+  var card = document.getElementById('mobile-info-card');
+  if (!card) return;
+  var cardBody = card.querySelector('.mic-body');
+  var closeBtn = card.querySelector('.mic-close');
+  var lastOpen = 0;
+  var clearHighlight = function() {};
+
+  function hideCard() {
+    if (!card.classList.contains('visible')) return;
+    card.classList.remove('visible');
+    clearHighlight();
+  }
+  closeBtn.addEventListener('click', function(e) { e.stopPropagation(); hideCard(); });
+
+  // Dismiss when tapping non-canvas UI (legend, filters, chrome). The 400ms
+  // guard stops the very tap that opened the card from also closing it (the
+  // same gesture bubbles a DOM click to document right after).
+  document.addEventListener('click', function(e) {
+    if (card.contains(e.target)) return;
+    if (Date.now() - lastOpen < 400) return;
+    hideCard();
+  });
+
+  window.addEventListener('datamapReady', function(e) {
+    var datamap = e.detail && e.detail.datamap;
+    var hoverData = e.detail && e.detail.hoverData;
+    if (!datamap || !hoverData) return;
+
+    clearHighlight = function() { setPointHighlight(-1); };
+
+    // Persist the point highlight ourselves: when the card slides up over the
+    // touch point it triggers a pointerleave on the canvas, which would clear
+    // deck.gl's autoHighlight.
+    function setPointHighlight(idx) {
+      var layer = datamap.pointLayer;
+      if (!layer || !datamap.layers || !datamap.deckgl) return;
+      var layerIdx = datamap.layers.indexOf(layer);
+      if (layerIdx === -1) return;
+      var updated = layer.clone({ highlightedObjectIndex: idx });
+      datamap.layers[layerIdx] = updated;
+      datamap.pointLayer = updated;
+      datamap.deckgl.setProps({ layers: datamap.layers.slice() });
+    }
+
+    function field(name, idx) {
+      return hoverData[name] ? hoverData[name][idx] : '';
+    }
+
+    function showMobileCard(idx) {
+      // poster / genre / cast are pre-built HTML fragments (may be empty); the
+      // rest are escaped text. Mirrors the desktop hover template.
+      var html = '<div style="overflow:hidden">'
+        + field('poster', idx)
+        + '<div style="font-weight:700;font-size:15px;line-height:1.3">'
+        + field('title', idx)
+        + ' <span style="font-weight:400;opacity:.7">(' + field('year', idx) + ')</span></div>';
+      var byline = field('byline', idx);
+      if (byline) html += '<div style="margin-top:3px;font-size:11px;opacity:.8">' + byline + '</div>';
+      var synopsis = field('synopsis', idx);
+      if (synopsis) html += '<div style="margin-top:6px;font-size:12.5px;line-height:1.45">' + synopsis + '</div>';
+      html += field('genre', idx)
+        + '<div style="margin-top:5px;font-size:11px;color:#c79a3a">Shelf: ' + field('shelf', idx) + '</div>'
+        + '<div style="margin-top:3px;font-size:11px;opacity:.7">'
+        + field('formats', idx) + ' &nbsp;·&nbsp; ' + field('rating', idx) + '</div>'
+        + field('cast', idx)
+        + '</div>';
+      var url = field('mm_url', idx);
+      if (url) {
+        html += '<a class="mic-visit" href="' + url + '" target="_blank" rel="noopener">'
+          + 'Find it at the store →</a>';
+      }
+      cardBody.innerHTML = html;
+      card.scrollTop = 0;
+      card.classList.add('visible');
+      lastOpen = Date.now();
+      setPointHighlight(idx);
+    }
+
+    // Override the deck props set for desktop:
+    //  - getTooltip: drop the hover tooltip (the card replaces it).
+    //  - onClick: was window.open(mm_url) — now show the card, or dismiss on an
+    //    empty-space tap; the store link lives on the card's button instead.
+    //  - onHover: on touch this fires reliably on tap across the whole canvas,
+    //    where onClick alone often misses points in the upper area (deck.gl
+    //    synthetic-click timing). Trade-off: it can also pop the card while
+    //    panning — a known rough edge to judge on-device (drag-suppress = Ph.2).
+    datamap.deckgl.setProps({
+      getTooltip: null,
+      onClick: function(info) {
+        if (info && info.picked) showMobileCard(info.index);
+        else hideCard();
+      },
+      onHover: function(info) {
+        if (info && info.picked) showMobileCard(info.index);
+      }
+    });
+  });
+})();
+</script>"""
+
+
+def inject_mobile_support(html: str) -> str:
+    """Phase 1 mobile patches: viewport meta + a max-width:768px stylesheet +
+    a touch-only bottom-sheet info card (tap a point -> card with the hover
+    fields and a 'find it at the store' button, instead of navigating away).
+    String-in/string-out like postprocess_html, so it can also patch an
+    already-rendered file. Desktop is untouched (the JS early-returns off touch).
+    Run after inject_filter_panel — it relies on that function's datamapReady
+    event and on the attribution patch having re-added </body>."""
+    assert html.count("</head>") == 1, "mobile: expected exactly one </head>"
+    html = html.replace("</head>", VIEWPORT_META + "\n" + MOBILE_CSS + "\n</head>", 1)
+    assert html.count("</body>") == 1, "mobile: expected exactly one </body>"
+    html = html.replace("</body>", MOBILE_INFOCARD_HTML + "\n</body>", 1)
+    assert html.count("</html>") == 1, "mobile: expected exactly one </html>"
+    html = html.replace("</html>", MOBILE_JS + "\n</html>", 1)
     return html
 
 
@@ -378,10 +650,14 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     qual_search = df["qualifiers"].map(lambda q: " ".join(q) if len(q) else "")  # Criterion, A24, Arrow...
     hover_text = (
         df["title"].fillna("")
-        + " " + df["director"].fillna("")
-        + " " + df["cast_str"].fillna("")
-        + " " + section_search
-        + " " + qual_search
+        + " "
+        + df["director"].fillna("")
+        + " "
+        + df["cast_str"].fillna("")
+        + " "
+        + section_search
+        + " "
+        + qual_search
     ).to_numpy()
 
     # --- colormaps ---
@@ -476,10 +752,12 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     out = map_html(variant)
     fig.save(str(out))
 
-    # Post-render: attribution + faster zoom, then the Advanced Filters panel.
+    # Post-render: attribution + faster zoom, the Advanced Filters panel, then
+    # the mobile layer (viewport meta + touch info card).
     html = postprocess_html(out.read_text())
     config = build_filter_config(df, format_cats, genre_cats, rating_cat)
     html = inject_filter_panel(html, config)
+    html = inject_mobile_support(html)
     out.write_text(html)
     n_filters = sum(len(s["filters"]) for s in config["sections"])
     print(f"  [{variant}] saved {out} ({out.stat().st_size / 1e6:.1f} MB) + {n_filters} filters")
