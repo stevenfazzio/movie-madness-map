@@ -672,9 +672,16 @@ POINT_LABELS_JS = """<script>
     var meta = datamap.metaData || {};
     var titles = meta.title;
     if (!titles) return;
-    var positions = datamap.pointLayer.props.data.attributes.getPosition.value;
+    var pl = datamap.pointLayer;
+    var positions = pl.props.data.attributes.getPosition.value;
     var pop = meta.popularity_filter || null;   // popular titles win the declutter
     var n = titles.length;
+    // Point radius config, so a label can sit just ABOVE its dot. The dot's screen
+    // radius grows with zoom (world radius * pixels-per-world-unit) and caps at
+    // radiusMaxPixels (~24px); a fixed offset can't clear it, so we compute it.
+    var R_MAX = pl.props.radiusMaxPixels || 24, R_MIN = pl.props.radiusMinPixels || 0;
+    var R_SCALE = pl.props.radiusScale || 1;
+    var R_BASE = typeof pl.props.getRadius === 'number' ? pl.props.getRadius : 0.05;
 
     var charSet = new Set();
     for (var i = 0; i < n; i++) {
@@ -683,9 +690,11 @@ POINT_LABELS_JS = """<script>
     }
     var characterSet = Array.from(charSet);
 
-    var initialZoom = datamap.deckgl.props.initialViewState.zoom;
-    var SHOW_ZOOM = initialZoom + 3;   // start fading in ~3 zoom levels past the overview
-    var FADE = 1.3;                    // zoom range over which opacity ramps 0 -> 1
+    // Gate on the ACTUAL overview zoom captured at load. (initialViewState.zoom is
+    // baked at render time and is LOWER than the real fit-zoom on large screens, so
+    // basing the gate on it made labels appear near the overview there.) Labels
+    // fade in DELTA zoom levels past wherever the map first sat.
+    var baseZoom = null, DELTA = 4, FADE = 1.2;
     var MAX_LABELS = 200;             // hard cap on labels drawn at once
     var CELL_W = 96, CELL_H = 18;     // declutter grid cell (screen px)
 
@@ -714,14 +723,14 @@ POINT_LABELS_JS = """<script>
       return out;
     }
 
-    function buildLayer(data, opacity) {
+    function buildLayer(data, opacity, offY) {
       return new deck.TextLayer({
         id: 'pointLabelLayer', data: data, opacity: opacity,
         getText: function(d) { return d.text; },
         getPosition: function(d) { return d.position; },
         getSize: 12, sizeUnits: 'pixels',
         getColor: [245, 245, 248],
-        getTextAnchor: 'middle', getAlignmentBaseline: 'bottom', getPixelOffset: [0, -8],
+        getTextAnchor: 'middle', getAlignmentBaseline: 'bottom', getPixelOffset: [0, offY],
         fontFamily: 'IBM Plex Sans, system-ui, sans-serif', fontWeight: 500,
         characterSet: characterSet,
         fontSettings: { sdf: true, radius: 12, buffer: 4 },
@@ -732,8 +741,12 @@ POINT_LABELS_JS = """<script>
 
     function update() {
       var vp = viewport(); if (!vp) return;
-      var opacity = Math.max(0, Math.min(1, (vp.zoom - SHOW_ZOOM) / FADE));
-      var layer = buildLayer(opacity > 0 ? visibleData(vp) : [], opacity);
+      if (baseZoom === null) baseZoom = vp.zoom;   // the overview zoom on THIS screen
+      var opacity = Math.max(0, Math.min(1, (vp.zoom - (baseZoom + DELTA)) / FADE));
+      // dot screen radius -> place the label just above it
+      var ppwu = Math.abs(vp.project([1, 0])[0] - vp.project([0, 0])[0]);
+      var dotR = Math.min(R_MAX, Math.max(R_MIN, R_BASE * R_SCALE * ppwu));
+      var layer = buildLayer(opacity > 0 ? visibleData(vp) : [], opacity, -(dotR + 5));
       var i = datamap.layers.findIndex(function(l) { return l.id === 'pointLabelLayer'; });
       var dp = datamap.layers.findIndex(function(l) { return l.id === 'dataPointLayer'; });
       if (i !== -1) datamap.layers[i] = layer;

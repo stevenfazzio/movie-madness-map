@@ -222,13 +222,20 @@ mobile. Instead we **viewport-cull + declutter** on each view-state change:
   `datamap.pointLayer.props.data.attributes.getPosition.value` buffer);
 - greedily place them on a screen-space grid (`CELL_W×CELL_H`), **popularity-first**
   (`metaData.popularity_filter`), capped at `MAX_LABELS` (200);
-- rebuild the TextLayer with that subset; opacity ramps 0→1 from `SHOW_ZOOM`
-  (`initialZoom + 3`) over `FADE` zoom levels.
+- rebuild the TextLayer with that subset; opacity ramps 0→1 starting `DELTA` (4)
+  zoom levels past the overview, over `FADE` zoom levels.
 
 So the layer stays a few hundred labels regardless of the 82k total (~3ms/update
 measured, rAF-throttled inside a wrapped `onViewStateChange` that still calls the
 original). White SDF text + dark halo, sized in pixels, placed just above each dot
-(`getAlignmentBaseline:'bottom'`, `getPixelOffset:[0,-8]`); **not** pickable, so
+(`getAlignmentBaseline:'bottom'`; offset = `-(dotRadius+5)` recomputed per update —
+the dot's screen radius is `getRadius*radiusScale*pixels-per-world-unit`, capped at
+`radiusMaxPixels`≈24, so a *fixed* offset can't clear it at high zoom). **Two
+gotchas found on-device (2026-06-14):** (1) gate on the overview zoom captured at
+load (`baseZoom` on first update), NOT `initialViewState.zoom` — that's baked at
+render time and is lower than the real fit-zoom on large screens, so labels showed
+near the overview there; (2) the offset must track the dot radius (above) or labels
+overlap the dots once they're at `radiusMaxPixels`. **not** pickable, so
 clicks still hit the dot for the hover/card. Titles are already in `metaData.title`
 → no file-size cost. Inserted right after `dataPointLayer` so the Toponymy region
 labels (`labelLayer`) stay on top. Works on all devices (zoom-driven, not
