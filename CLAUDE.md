@@ -14,8 +14,12 @@ Toponymy (Claude naming) → DataMapPlot → GitHub Pages (`docs/`).
 ## Decisions (made with Steven, 2026-06-12)
 
 - **One dot per film, not per SKU.** Same title+year across DVD/Blu-ray/VHS
-  collapses to one row (`formats` list survives; "VHS only" is a signal worth
-  filtering on). TV seasons stay separate (season is part of the title).
+  collapses to one row (the full `formats` list survives per film). TV seasons
+  stay separate (season is part of the title). (The stage-07 Format filter was
+  an exclusive "VHS only" bucket through 2026-06-14, then changed to a plain
+  contains-this-format checkbox — VHS now matches any film with a VHS edition,
+  same as the other formats; the colormap still buckets to one best-of-ladder
+  format per point.)
 - **TMDB enrichment: yes** — synopsis gap-fill (~31% of SKUs have no catalog
   synopsis), director/cast, posters, genres. Catalog synopsis wins when present.
   No LLM-generated synopses ever: the obscure tail is exactly where hallucinated
