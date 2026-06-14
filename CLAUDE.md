@@ -211,6 +211,31 @@ info layer is unreachable on a phone. Phase 1 fixes both; ported/re-themed from
   near-black on the dark map, and the extension's viewport drifts between calls).
   Final visual check is on a real phone.
 
+### Per-point title labels on zoom (`inject_point_labels`, added 2026-06-14)
+
+Film titles that fade in as you zoom (like `../semantic-github-map`), as a deck.gl
+`TextLayer` injected on the `datamapReady` event. semantic-github (10k pts) renders
+EVERY label into one TextLayer; at our 82k that's ~1.7M glyphs — too heavy, esp.
+mobile. Instead we **viewport-cull + declutter** on each view-state change:
+
+- keep only points inside the current viewport (bounds test against the
+  `datamap.pointLayer.props.data.attributes.getPosition.value` buffer);
+- greedily place them on a screen-space grid (`CELL_W×CELL_H`), **popularity-first**
+  (`metaData.popularity_filter`), capped at `MAX_LABELS` (200);
+- rebuild the TextLayer with that subset; opacity ramps 0→1 from `SHOW_ZOOM`
+  (`initialZoom + 3`) over `FADE` zoom levels.
+
+So the layer stays a few hundred labels regardless of the 82k total (~3ms/update
+measured, rAF-throttled inside a wrapped `onViewStateChange` that still calls the
+original). White SDF text + dark halo, sized in pixels, placed just above each dot
+(`getAlignmentBaseline:'bottom'`, `getPixelOffset:[0,-8]`); **not** pickable, so
+clicks still hit the dot for the hover/card. Titles are already in `metaData.title`
+→ no file-size cost. Inserted right after `dataPointLayer` so the Toponymy region
+labels (`labelLayer`) stay on top. Works on all devices (zoom-driven, not
+touch-gated). **Not filter-aware yet** — labels show for all in-view points even
+when a filter dims most; a possible follow-up (semantic-github exposes a
+`updateVisibility(selectedSet)` hook for exactly this).
+
 ## Conventions
 
 - `film_id` is the alignment key across every stage — it's the content-derived

@@ -8,11 +8,11 @@ dropdown covers year, coarse genre, format, rating, editions, and TMDB
 popularity/runtime. Toponymy region names float on top.
 
 Post-render patches (see postprocess_html / inject_filter_panel /
-inject_mobile_support): attribution footer, faster scroll-zoom, the composable
-"Advanced Filters" panel (format / decade / genre / rating / editions) vendored
-from filter_panel.html, and a Phase-1 mobile layer (viewport meta + a touch-only
-bottom-sheet info card, so tapping a film on a phone shows its details instead of
-navigating straight to the store).
+inject_mobile_support / inject_point_labels): attribution footer, faster
+scroll-zoom, the composable "Advanced Filters" panel (format / decade / genre /
+rating / editions) vendored from filter_panel.html, a mobile layer (viewport meta
++ touch info card + legend popover), and per-point film-title labels that fade in
+on zoom (viewport-culled + decluttered, so they scale to ~82k points).
 
 Inputs:  data/umap_coords_<variant>.npz, data/films.parquet, pipeline/filter_panel.html,
          [optional] data/toponymy_labels_<variant>.parquet
@@ -654,6 +654,116 @@ def inject_mobile_support(html: str) -> str:
     return html
 
 
+# ── Per-point title labels (fade in on zoom) ──────────────────────────────────
+# DataMapPlot shows only the Toponymy *region* names, not per-film titles. This
+# adds film titles that fade in once you zoom in, like ../semantic-github-map —
+# but that map (10k pts) renders ALL labels into one TextLayer; at our 82k that's
+# ~1.7M glyphs (heavy, esp. mobile). Instead we viewport-CULL: each view-state
+# change, keep only points in the current viewport, then greedily DECLUTTER on a
+# screen grid (popular titles win slots) and draw at most MAX_LABELS. So the layer
+# stays a few hundred labels regardless of total (≈3ms/update, measured). White
+# SDF text with a dark halo, placed just above each dot; not pickable, so clicks
+# still hit the dot. Titles are already in metaData -> no file-size cost.
+POINT_LABELS_JS = """<script>
+(function() {
+  window.addEventListener('datamapReady', function(e) {
+    var datamap = e.detail.datamap;
+    if (!datamap || !datamap.pointLayer || !datamap.deckgl || typeof deck === 'undefined') return;
+    var meta = datamap.metaData || {};
+    var titles = meta.title;
+    if (!titles) return;
+    var positions = datamap.pointLayer.props.data.attributes.getPosition.value;
+    var pop = meta.popularity_filter || null;   // popular titles win the declutter
+    var n = titles.length;
+
+    var charSet = new Set();
+    for (var i = 0; i < n; i++) {
+      var t = titles[i]; if (!t) continue;
+      for (var j = 0; j < t.length; j++) charSet.add(t[j]);
+    }
+    var characterSet = Array.from(charSet);
+
+    var initialZoom = datamap.deckgl.props.initialViewState.zoom;
+    var SHOW_ZOOM = initialZoom + 3;   // start fading in ~3 zoom levels past the overview
+    var FADE = 1.3;                    // zoom range over which opacity ramps 0 -> 1
+    var MAX_LABELS = 200;             // hard cap on labels drawn at once
+    var CELL_W = 96, CELL_H = 18;     // declutter grid cell (screen px)
+
+    function viewport() { var v = datamap.deckgl.getViewports(); return v && v[0]; }
+
+    function visibleData(vp) {
+      var c1 = vp.unproject([0, 0]), c2 = vp.unproject([vp.width, vp.height]);
+      var minX = Math.min(c1[0], c2[0]), maxX = Math.max(c1[0], c2[0]);
+      var minY = Math.min(c1[1], c2[1]), maxY = Math.max(c1[1], c2[1]);
+      var cand = [];
+      for (var i = 0; i < n; i++) {
+        var x = positions[i * 2], y = positions[i * 2 + 1];
+        if (x < minX || x > maxX || y < minY || y > maxY || !titles[i]) continue;
+        cand.push(i);
+      }
+      if (pop) cand.sort(function(a, b) { return pop[b] - pop[a]; });
+      var occ = {}, out = [];
+      for (var k = 0; k < cand.length && out.length < MAX_LABELS; k++) {
+        var idx = cand[k];
+        var sp = vp.project([positions[idx * 2], positions[idx * 2 + 1]]);
+        var key = ((sp[0] / CELL_W) | 0) + ',' + ((sp[1] / CELL_H) | 0);
+        if (occ[key]) continue;
+        occ[key] = 1;
+        out.push({ text: titles[idx], position: [positions[idx * 2], positions[idx * 2 + 1]] });
+      }
+      return out;
+    }
+
+    function buildLayer(data, opacity) {
+      return new deck.TextLayer({
+        id: 'pointLabelLayer', data: data, opacity: opacity,
+        getText: function(d) { return d.text; },
+        getPosition: function(d) { return d.position; },
+        getSize: 12, sizeUnits: 'pixels',
+        getColor: [245, 245, 248],
+        getTextAnchor: 'middle', getAlignmentBaseline: 'bottom', getPixelOffset: [0, -8],
+        fontFamily: 'IBM Plex Sans, system-ui, sans-serif', fontWeight: 500,
+        characterSet: characterSet,
+        fontSettings: { sdf: true, radius: 12, buffer: 4 },
+        outlineWidth: 2.5, outlineColor: [8, 8, 11, 255],
+        background: false, parameters: { depthTest: false }
+      });
+    }
+
+    function update() {
+      var vp = viewport(); if (!vp) return;
+      var opacity = Math.max(0, Math.min(1, (vp.zoom - SHOW_ZOOM) / FADE));
+      var layer = buildLayer(opacity > 0 ? visibleData(vp) : [], opacity);
+      var i = datamap.layers.findIndex(function(l) { return l.id === 'pointLabelLayer'; });
+      var dp = datamap.layers.findIndex(function(l) { return l.id === 'dataPointLayer'; });
+      if (i !== -1) datamap.layers[i] = layer;
+      else if (dp !== -1) datamap.layers.splice(dp + 1, 0, layer);
+      else datamap.layers.push(layer);
+      datamap.deckgl.setProps({ layers: [].concat(datamap.layers) });
+    }
+
+    update();
+    var pending = false;
+    var orig = datamap.deckgl.props.onViewStateChange || null;
+    datamap.deckgl.setProps({
+      onViewStateChange: function(params) {
+        var r = orig ? orig(params) : undefined;
+        if (!pending) { pending = true; requestAnimationFrame(function() { pending = false; update(); }); }
+        return r;
+      }
+    });
+  });
+})();
+</script>"""
+
+
+def inject_point_labels(html: str) -> str:
+    """Inject the per-point title labels (POINT_LABELS_JS). Runs after
+    inject_filter_panel — it listens on that function's datamapReady event."""
+    assert html.count("</html>") == 1, "point labels: expected exactly one </html>"
+    return html.replace("</html>", POINT_LABELS_JS + "\n</html>", 1)
+
+
 def categorical_color_mapping(values, default=None, default_color="#c9ccd1"):
     uniques = sorted(set(map(str, values)))
     others = [v for v in uniques if v != default]
@@ -929,6 +1039,7 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     config = build_filter_config(df, format_cats, genre_cats, rating_cat)
     html = inject_filter_panel(html, config)
     html = inject_mobile_support(html)
+    html = inject_point_labels(html)
     out.write_text(html)
     n_filters = sum(len(s["filters"]) for s in config["sections"])
     print(f"  [{variant}] saved {out} ({out.stat().st_size / 1e6:.1f} MB) + {n_filters} filters")
