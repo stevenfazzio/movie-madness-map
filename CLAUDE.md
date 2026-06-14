@@ -242,9 +242,19 @@ overlap the dots once they hit `radiusMaxPixels`. The layer is **not** pickable,
 clicks still hit the dot for the hover/card. Titles are already in `metaData.title`
 → no file-size cost. Inserted right after `dataPointLayer` so the Toponymy region
 labels (`labelLayer`) stay on top. Works on all devices (zoom-driven, not
-touch-gated). **Not filter-aware yet** — labels show for all in-view points even
-when a filter dims most; a possible follow-up (semantic-github exposes a
-`updateVisibility(selectedSet)` hook for exactly this).
+touch-gated). **Filter-aware (2026-06-14):** a label is drawn only for a point
+that survives the active filters, read from `datamap.selected` (the per-point
+visibility Float32Array `highlightPoints` maintains: `1.0`=shown, `-1.0`=dimmed,
+all `1.0` when unfiltered). That one array is the universal signal — the search
+box (`searchText`), Advanced Filters (`addSelection`), and colormap-legend clicks
+(native `addSelection 'legend'`) all funnel through `highlightPoints` into it, so
+no per-mechanism hooks are needed. Two parts: the viewport-cull skips points with
+`selected[i] <= 0.5`; and `highlightPoints` is wrapped to re-cull on selection
+change (filters/search/legend fire it WITHOUT a view-state change, so
+`onViewStateChange` alone would leave stale labels). Because the in-view count
+drives the opacity fade, the cull also makes a narrow filter/search surface its
+labels early (don't have to zoom into a sparse region first). We wrap
+FilterPanel's own `highlightPoints` wrapper (its empty-match fix), so both run.
 
 ## Conventions
 

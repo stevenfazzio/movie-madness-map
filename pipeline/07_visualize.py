@@ -659,11 +659,14 @@ def inject_mobile_support(html: str) -> str:
 # adds film titles that fade in once you zoom in, like ../semantic-github-map —
 # but that map (10k pts) renders ALL labels into one TextLayer; at our 82k that's
 # ~1.7M glyphs (heavy, esp. mobile). Instead we viewport-CULL: each view-state
-# change, keep only points in the current viewport, then greedily DECLUTTER on a
-# screen grid (popular titles win slots) and draw at most MAX_LABELS. So the layer
-# stays a few hundred labels regardless of total (≈3ms/update, measured). White
-# SDF text with a dark halo, placed just above each dot; not pickable, so clicks
-# still hit the dot. Titles are already in metaData -> no file-size cost.
+# change, keep only points in the current viewport that survive the active
+# filters (datamap.selected), then greedily DECLUTTER on a screen grid (popular
+# titles win slots) and draw at most MAX_LABELS. So the layer stays a few hundred
+# labels regardless of total (≈3ms/update, measured). White SDF text with a dark
+# halo, placed just above each dot; not pickable, so clicks still hit the dot.
+# Titles are already in metaData -> no file-size cost. Filter-aware: the search
+# box, Advanced Filters, and colormap-legend clicks all gate the labels (the
+# in-view count also drives the fade, so a narrow filter surfaces labels early).
 POINT_LABELS_JS = """<script>
 (function() {
   window.addEventListener('datamapReady', function(e) {
@@ -676,6 +679,13 @@ POINT_LABELS_JS = """<script>
     var positions = pl.props.data.attributes.getPosition.value;
     var pop = meta.popularity_filter || null;   // popular titles win the declutter
     var n = titles.length;
+    // Filter-awareness: datamap.selected is the per-point visibility array that
+    // highlightPoints maintains — 1.0 = shown, -1.0 = dimmed/filtered out, and
+    // all 1.0 when nothing is filtered. Every selection path writes it (Advanced
+    // Filters via addSelection, the search box via searchText, colormap-legend
+    // clicks via addSelection 'legend'), so reading it makes the labels respect
+    // all three controls at once, regardless of which one the user touched.
+    var selected = datamap.selected || null;
     // Point radius config, so a label can sit just ABOVE its dot. The dot's screen
     // radius grows with zoom (world radius * pixels-per-world-unit) and caps at
     // radiusMaxPixels (~24px); a fixed offset can't clear it, so we compute it.
@@ -709,6 +719,7 @@ POINT_LABELS_JS = """<script>
       var minY = Math.min(c1[1], c2[1]), maxY = Math.max(c1[1], c2[1]);
       var cand = [];
       for (var i = 0; i < n; i++) {
+        if (selected && selected[i] <= 0.5) continue;   // filtered / searched out
         var x = positions[i * 2], y = positions[i * 2 + 1];
         if (x < minX || x > maxX || y < minY || y > maxY || !titles[i]) continue;
         cand.push(i);
@@ -762,16 +773,35 @@ POINT_LABELS_JS = """<script>
       datamap.deckgl.setProps({ layers: [].concat(datamap.layers) });
     }
 
-    update();
     var pending = false;
+    function scheduleUpdate() {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(function() { pending = false; update(); });
+    }
+
+    update();
     var orig = datamap.deckgl.props.onViewStateChange || null;
     datamap.deckgl.setProps({
       onViewStateChange: function(params) {
         var r = orig ? orig(params) : undefined;
-        if (!pending) { pending = true; requestAnimationFrame(function() { pending = false; update(); }); }
+        scheduleUpdate();
         return r;
       }
     });
+    // Re-cull when the SELECTION changes, not just the view. A filter toggle, a
+    // search keystroke, or a legend click fires highlightPoints WITHOUT a
+    // view-state change, so onViewStateChange alone would leave stale labels on
+    // now-hidden points until the next pan/zoom. highlightPoints is the single
+    // chokepoint every selection path goes through; FilterPanel has already
+    // wrapped it (its empty-match fix), and we wrap that wrapper so both run.
+    var prevHighlight = datamap.highlightPoints;
+    if (typeof prevHighlight === 'function') {
+      datamap.highlightPoints = function(itemId) {
+        prevHighlight.call(datamap, itemId);
+        scheduleUpdate();
+      };
+    }
   });
 })();
 </script>"""
