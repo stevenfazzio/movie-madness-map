@@ -18,7 +18,7 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY")
 
 PROJECT_NAME = "Movie Madness Map"
-PROJECT_TAGLINE = "Every title on the shelves of Portland's Movie Madness, laid out by what it's about"
+PROJECT_TAGLINE = "An interactive map of Portland's Movie Madness, where similar movies are neighbors."
 
 # --- Stage 00: fetch the rental catalog (public WordPress REST API) ---
 # Movie Madness (moviemadness.org, a nonprofit run by the Hollywood Theatre)

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>About · Movie Madness Map</title>
-  <meta name="description" content="About the Movie Madness Map — an interactive 2D map of the rental catalog at Portland's Movie Madness." />
+  <meta name="description" content="About the Movie Madness Map — an interactive map of the rental catalog at Portland's Movie Madness: what it is, how it's built, and how to read it." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -36,18 +36,60 @@
     .site-nav a.active { color: var(--brass, #e0b34e); border-bottom: 2px solid var(--brass, #e0b34e); line-height: 42px; }
     @media (max-width: 768px) { .site-nav { padding: 0 12px; gap: 16px; font-size: 13px; } }
 
-    main { max-width: 720px; margin: 0 auto; padding: 92px 24px 72px; }
+    main { max-width: 760px; margin: 0 auto; padding: 92px 24px 72px; }
     .eyebrow { text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px;
       font-weight: 600; color: var(--brass); margin: 0 0 12px; }
     h1 { font-size: clamp(28px, 5vw, 40px); font-weight: 600; line-height: 1.15; margin: 0 0 12px; }
-    .tagline { font-size: 18px; color: var(--text-dim); margin: 0 0 40px; max-width: 56ch; }
+    .tagline { font-size: 18px; color: var(--text-dim); margin: 0 0 8px; max-width: 56ch; }
+    .dateline { font-size: 13px; color: var(--text-faint); margin: 0 0 36px; }
 
-    /* Placeholder notice — replace this whole section with real methodology copy. */
-    .notice { border: 1px solid var(--ink-4); border-left: 3px solid var(--brass);
-      background: var(--ink-2); border-radius: 6px; padding: 20px 22px; }
-    .notice h2 { font-size: 16px; font-weight: 600; margin: 0 0 6px; }
-    .notice p { margin: 0; color: var(--text-dim); }
-    .notice a { color: var(--cyan); }
+    /* On-this-page contents */
+    .toc { background: var(--ink-2); border: 1px solid var(--ink-4); border-radius: 8px;
+      padding: 18px 22px; margin: 0 0 8px; }
+    .toc h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em;
+      color: var(--text-faint); margin: 0 0 10px; border: 0; padding: 0; }
+    .toc ol { margin: 0; padding: 0; list-style: none;
+      columns: 2; column-gap: 32px; font-size: 14px; }
+    .toc li { margin: 0 0 7px; break-inside: avoid; }
+    .toc a { color: var(--cyan); text-decoration: none; }
+    .toc a:hover { color: var(--brass); }
+    @media (max-width: 560px) { .toc ol { columns: 1; } }
+
+    section { margin-top: 8px; }
+    h2 { font-size: clamp(20px, 3.5vw, 25px); font-weight: 600; line-height: 1.25;
+      margin: 48px 0 14px; scroll-margin-top: 60px; }
+    h2 .hash { color: var(--ink-4); text-decoration: none; font-weight: 400; margin-left: 8px;
+      opacity: 0; transition: opacity 0.15s; }
+    h2:hover .hash { opacity: 1; }
+    h2 .hash:hover { color: var(--brass); }
+    p { margin: 0 0 16px; }
+    p .lead { color: var(--text); font-weight: 600; }
+    a { color: var(--cyan); }
+    a:hover { color: var(--brass); }
+    em { color: var(--text); }
+
+    .controls { list-style: none; margin: 0 0 16px; padding: 0; }
+    .controls li { margin: 0 0 10px; padding-left: 0; }
+    .controls b { color: var(--text); font-weight: 600; }
+
+    table { width: 100%; border-collapse: collapse; margin: 6px 0 16px; font-size: 14.5px; }
+    th, td { text-align: left; vertical-align: top; padding: 9px 12px 9px 0; }
+    th { color: var(--text-faint); font-weight: 600; font-size: 12px; text-transform: uppercase;
+      letter-spacing: 0.08em; border-bottom: 1px solid var(--ink-4); }
+    td { border-bottom: 1px solid var(--ink-3); color: var(--text-dim); }
+    td:first-child { color: var(--text); font-weight: 500; white-space: nowrap; padding-right: 22px; }
+    .params td:first-child { white-space: normal; }
+
+    details.appendix { margin: 48px 0 0; border: 1px solid var(--ink-4); border-radius: 8px;
+      background: var(--ink-2); scroll-margin-top: 60px; }
+    details.appendix > summary { cursor: pointer; list-style: none; padding: 16px 22px;
+      font-size: clamp(18px, 3vw, 21px); font-weight: 600; color: var(--text); }
+    details.appendix > summary::-webkit-details-marker { display: none; }
+    details.appendix > summary::after { content: '  ▸'; color: var(--brass); font-size: 14px; }
+    details.appendix[open] > summary::after { content: '  ▾'; }
+    details.appendix > summary:hover { color: var(--brass); }
+    .appendix-body { padding: 0 22px 20px; border-top: 1px solid var(--ink-4); }
+    .appendix-body p { color: var(--text-dim); margin-top: 16px; }
 
     footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--ink-4);
       font-size: 12px; color: var(--text-faint); }
@@ -64,15 +106,248 @@
   <main>
     <p class="eyebrow">About</p>
     <h1>Movie Madness Map</h1>
-    <p class="tagline">Every title on the shelves of Portland's Movie Madness, laid out by what it's about.</p>
+    <p class="tagline">What this map is, how it's built, and how to read it.</p>
+    <p class="dateline">A personal project by Steven Fazzio. Not affiliated with Movie Madness.</p>
 
-    <!-- TODO: replace this placeholder with the real About / methodology content. -->
-    <section class="notice">
-      <h2>Methodology &amp; credits — coming soon</h2>
-      <p>This page will explain how the map is built: where the catalog comes from, how each
-         film is placed, and how the regions are named. For now, head back to the
-         <a href="index.html">map</a>.</p>
+    <nav class="toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ol>
+        <li><a href="#start">Start here</a></li>
+        <li><a href="#reading">How to read it</a></li>
+        <li><a href="#data">What's on the map</a></li>
+        <li><a href="#placement">How a film finds its place</a></li>
+        <li><a href="#regions">How the regions get their names</a></li>
+        <li><a href="#ai">How AI is used (and how it isn't)</a></li>
+        <li><a href="#using">Finding your way around</a></li>
+        <li><a href="#colors">What the colors mean</a></li>
+        <li><a href="#limitations">Limitations</a></li>
+        <li><a href="#credits">Credits and thanks</a></li>
+        <li><a href="#technical">Technical details</a></li>
+      </ol>
+    </nav>
+
+    <section>
+      <h2 id="start">Start here <a class="hash" href="#start">#</a></h2>
+      <p>Movie Madness, in Portland, Oregon, is one of the largest video rental stores left on
+        Earth. It's a nonprofit now, run by the <a href="https://hollywoodtheatre.org/" target="_blank" rel="noopener">Hollywood
+        Theatre</a>, and its shelves hold close to 99,000 discs and tapes. I'm a fan, not an
+        employee or a spokesperson. I just love what they're doing, and I wanted to see the whole collection
+        at once.</p>
+      <p>This map is my attempt at that. Every dot is one film (about 82,000 of them, collapsed from
+        all those separate discs and tapes), and films that are about similar things sit near each
+        other. Wander it the way you'd wander the aisles: zoom into a corner, see what's gathered
+        there, and click a dot to open that film on the store's own catalog. If something catches
+        your eye, go rent it. The store runs on memberships and rentals, and it ships nationwide.</p>
     </section>
+
+    <section>
+      <h2 id="reading">How to read it <a class="hash" href="#reading">#</a></h2>
+      <p>The one idea that makes the map make sense: <em>position means similarity</em>. Two films
+        end up close together when their descriptions use similar language, so you'll find pockets
+        of slasher horror, Hong Kong action, French New Wave, and concert films, each in its own
+        part of the map.</p>
+      <p>A few things the map is <em>not</em>. It isn't a ranking; a dot in the middle isn't better
+        or more important than one near the edge. Distances are rough: a short hop genuinely means
+        "pretty similar," but you shouldn't read the exact gap between two far-apart regions as a
+        precise measurement. And it's a snapshot. The store's inventory changes constantly, so this
+        is roughly what was on the shelves when I pulled the data.</p>
+    </section>
+
+    <section>
+      <h2 id="data">What's on the map <a class="hash" href="#data">#</a></h2>
+      <p>The collection comes straight from Movie Madness's public online catalog. That gives me
+        each film's title, year, the formats it's stocked on (DVD, Blu-ray, 4K, VHS), its MPAA
+        rating, and which shelf section it lives in. Many films also carry a written synopsis.</p>
+      <p>One dot is one film, not one disc. The same movie on DVD, Blu-ray, and VHS becomes a single
+        dot that remembers all three formats. TV shows are split by season, since each season has
+        its own shelf life, and the occasional book in the catalog gets a dot too.</p>
+      <p>Where the catalog has gaps, I fill them in from <a href="https://www.themoviedb.org/" target="_blank" rel="noopener">The
+        Movie Database</a> (TMDB), a community-run movie encyclopedia: posters, directors and cast,
+        genres, and a synopsis for the roughly one film in three that the store didn't describe.
+        When both have a synopsis, the store's own wording wins.</p>
+    </section>
+
+    <section>
+      <h2 id="placement">How a film finds its place <a class="hash" href="#placement">#</a></h2>
+      <p>To place a film, a computer first has to turn its words into something it can compare. The
+        tool for that is an <em>embedding model</em>: you feed it text, and it hands back a long
+        list of numbers that captures the gist of what that text is about. Two films with similar
+        descriptions get similar lists of numbers, and "similar list of numbers" is something a
+        computer can measure exactly.</p>
+      <p>Each film's numbers come from its title, year, and synopsis, plus the name of the shelf it
+        sits on in the store. That last part matters more than it sounds. Movie Madness doesn't
+        shelve alphabetically; it shelves by hand, into sections like "Hollywood Directors," "60s Go
+        Go Chicks," and dozens of national cinemas. Folding those section names into the mix lets the
+        store's own taste help shape the map, which is why the neighborhoods feel like the store and
+        not like a generic genre chart.</p>
+      <p>Those lists of numbers live in a space with far more than two dimensions, so a final step
+        flattens them down to the flat layout you can actually look at, keeping near things near.</p>
+    </section>
+
+    <section>
+      <h2 id="regions">How the regions get their names <a class="hash" href="#regions">#</a></h2>
+      <p>The labeled regions floating over the map ("Slasher &amp; Splatter," "Italian Cinema," and
+        so on) aren't shelf names lifted from the store. They're generated. Once the films are laid
+        out, a clustering step finds the dense clumps, and then an AI language model reads a
+        sample of films from each clump and writes a short name for it. The names shift as you zoom:
+        a broad area up close resolves into several finer neighborhoods as you go in.</p>
+      <p>Some parts of the map don't get a name at all. Where the films are too spread out or too
+        mixed for a clean label, the region is left blank rather than forced into a category that
+        doesn't fit. Those blanks are honest: they mark places the map couldn't summarize, not gaps
+        in the collection.</p>
+    </section>
+
+    <section>
+      <h2 id="ai">How AI is used (and how it isn't) <a class="hash" href="#ai">#</a></h2>
+      <p>I'll be straight about where AI is and isn't involved here, because I know plenty of people
+        are worn out by it being stuffed into everything.</p>
+      <p>The most important thing first: <span class="lead">no AI wrote any of the plot
+        descriptions.</span> Every synopsis you read is either the store's own catalog text or a
+        description from TMDB, written by people. I made that a hard rule. The obscure tail of an
+        82,000-film collection is exactly where a confidently made-up plot would slip by unnoticed,
+        and a movie map full of plausible-sounding fiction would be worse than useless.</p>
+      <p>AI does two jobs on this map, and both are about organizing what already exists, not
+        inventing anything. First, an embedding model reads each film's real description and turns
+        it into numbers so similar films can be grouped. Second, an AI language model writes the names for the
+        regions. Neither one is judging whether a film is good or deciding what it "really" is;
+        they're sorting and labeling text that was already there.</p>
+      <p>And the most interesting structure on this map isn't the AI's doing. The reason there's a
+        coherent French cinema corner, or a whole wall of slashers, is that the staff of Movie
+        Madness spent years shelving those films that way by hand. The map mostly just makes decades
+        of human curation visible from above.</p>
+      <p>None of which makes the machine parts perfect. The region names are a model's best guess
+        from a handful of examples, and some are off. The grouping can misread a thin or misleading
+        description and drop a film somewhere strange. And I'll admit there's some irony in using
+        closed, commercial AI models to celebrate a place that is about as physical, local, and
+        human as it gets. I reached for them because they did the job well, but they're a tool, not
+        the point of the thing.</p>
+    </section>
+
+    <section>
+      <h2 id="using">Finding your way around <a class="hash" href="#using">#</a></h2>
+      <ul class="controls">
+        <li><b>Pan and zoom.</b> Drag to move around; scroll or pinch to zoom in and out.</li>
+        <li><b>Hover or tap a dot.</b> A card shows the poster, director and cast, synopsis, shelf
+          section, formats, and rating.</li>
+        <li><b>Click a dot.</b> Opens that film on the Movie Madness catalog, where you can check
+          availability and rent it.</li>
+        <li><b>Search.</b> The box finds films by title, director, cast, shelf section, or
+          special-edition label (Criterion, A24, and the like).</li>
+        <li><b>Filter.</b> The Advanced Filters panel narrows the map by format, genre, rating,
+          year, runtime, popularity, and how many editions the store stocks.</li>
+        <li><b>Labels on zoom.</b> As you zoom into a sparse-enough area, individual film titles
+          fade in above the dots.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 id="colors">What the colors mean <a class="hash" href="#colors">#</a></h2>
+      <p>By default the dots are colored by region, matching the named neighborhoods. The dropdown at
+        the lower-left switches the coloring to any of these:</p>
+      <table>
+        <thead><tr><th>Coloring</th><th>What it shows</th></tr></thead>
+        <tbody>
+          <tr><td>Clusters (default)</td><td>The map's named regions, each in its own color. This is
+            the coloring that matches the floating labels.</td></tr>
+          <tr><td>Release year</td><td>A light-to-dark scale running from the oldest films to the
+            newest.</td></tr>
+          <tr><td>Genre</td><td>The store's own broad genre (Horror, Foreign, Comedy, and so on).
+            The fifteen most common each get a color; everything else is grouped as "Other." A film
+            in several genres is colored by its rarest one, so big buckets like "Foreign" don't
+            swallow the whole map.</td></tr>
+          <tr><td>Format (best available)</td><td>The highest-quality format the store stocks a film
+            on, from 4K down through Blu-ray, DVD, and VHS.</td></tr>
+          <tr><td>MPAA rating</td><td>G through NC-17, plus X and "N/R" for films that are unrated or
+            not on record.</td></tr>
+          <tr><td>Editions in stock</td><td>How many separate editions the store carries, from one
+            up to ten or more.</td></tr>
+          <tr><td>TMDB popularity</td><td>How much attention a film currently gets on TMDB, on a log
+            scale so the few blockbusters don't flatten everything else.</td></tr>
+          <tr><td>Runtime</td><td>Length in minutes.</td></tr>
+        </tbody>
+      </table>
+      <p>Films missing a value (no known year, say, or no match on TMDB) are shown at the neutral end
+        of the scale, and they drop out of the matching filter the moment you adjust its slider.</p>
+    </section>
+
+    <section>
+      <h2 id="limitations">Limitations <a class="hash" href="#limitations">#</a></h2>
+      <p>Every map is a particular way of looking, and this one has clear blind spots. A few worth
+        knowing about:</p>
+      <p><span class="lead">It's only as good as the descriptions.</span> A film with a thin or
+        misleading synopsis can land in the wrong neighborhood. If you spot a movie that's clearly
+        out of place, that's usually why.</p>
+      <p><span class="lead">The match to TMDB isn't perfect.</span> Linking 82,000 catalog entries
+        to an outside database by title and year goes wrong sometimes, especially for obscure films,
+        foreign titles, and movies with common names. A bad match means a wrong poster or the wrong
+        cast on the card.</p>
+      <p><span class="lead">The region names are approximate.</span> They're a useful guide to what's
+        nearby, not an authoritative taxonomy, and the blank regions are simply areas the map
+        honestly couldn't name.</p>
+      <p><span class="lead">Flattening loses detail.</span> Squashing a many-dimensioned layout down
+        to the two dimensions on your screen always distorts something. Trust that near means
+        similar; don't over-read the exact distance between two distant regions.</p>
+      <p>What it's good for, despite all that, is wandering. It's a way to get lost in a great
+        collection, stumble onto a section you didn't know existed, and walk out (virtually) with
+        three movies you'd never have thought to search for.</p>
+    </section>
+
+    <section>
+      <h2 id="credits">Credits and thanks <a class="hash" href="#credits">#</a></h2>
+      <p>First and above all, thank you to <a href="https://www.moviemadness.org/" target="_blank" rel="noopener">Movie
+        Madness</a> and the Hollywood Theatre for keeping a collection like this alive and open to
+        the public, and for putting the whole catalog online where a curious fan could find it. If
+        this map sends even a few people their way, I'll be happy. Go become a member.</p>
+      <p>Posters, cast, and the gap-filling descriptions come from <a href="https://www.themoviedb.org/" target="_blank" rel="noopener">TMDB</a>
+        and its community of contributors. This product uses the TMDB API but is not endorsed or
+        certified by TMDB.</p>
+      <p>The map is built with open-source tools from the <a href="https://github.com/TutteInstitute" target="_blank" rel="noopener">Tutte
+        Institute for Mathematics and Computing</a>: <a href="https://github.com/lmcinnes/umap" target="_blank" rel="noopener">UMAP</a>
+        for the layout, <a href="https://github.com/TutteInstitute/toponymy" target="_blank" rel="noopener">Toponymy</a>
+        for finding and labeling the regions, and <a href="https://github.com/TutteInstitute/datamapplot" target="_blank" rel="noopener">DataMapPlot</a>
+        for the interactive map itself. The embeddings are from <a href="https://cohere.com/" target="_blank" rel="noopener">Cohere</a>,
+        and the region names are written by Anthropic's <a href="https://www.anthropic.com/claude" target="_blank" rel="noopener">Claude</a>.</p>
+      <p>I'm Steven Fazzio, a data scientist who makes these maps for fun. I'm not affiliated with
+        Movie Madness in any way; I'm just a fan with a soft spot for enormous collections. The full
+        source code is <a href="https://github.com/stevenfazzio/movie-madness-map" target="_blank" rel="noopener">on
+        GitHub</a>, and if you find a film that's clearly misplaced or mislabeled, I'd genuinely
+        like to hear about it. I've made maps like this one before, of
+        <a href="https://stevenfazzio.github.io/oeisdata-map/" target="_blank" rel="noopener">a famous catalog of
+        integer sequences</a>, the
+        <a href="https://stevenfazzio.github.io/semantic-github-map/" target="_blank" rel="noopener">most-starred
+        projects on GitHub</a>, and the
+        <a href="https://stevenfazzio.github.io/huggingface-dataset-map/" target="_blank" rel="noopener">most-liked
+        datasets on Hugging Face</a>.</p>
+    </section>
+
+    <details class="appendix" id="technical">
+      <summary>Technical details</summary>
+      <div class="appendix-body">
+        <p>The short version of the pipeline, for anyone curious about the machinery. The full
+          source, the exact prompts, and the catalog quirks I ran into along the way are all in the
+          <a href="https://github.com/stevenfazzio/movie-madness-map" target="_blank" rel="noopener">repository</a>.</p>
+        <table class="params">
+          <tbody>
+            <tr><td>Catalog source</td><td>Movie Madness public WordPress REST API (~98,834 catalog
+              entries), fetched politely and cached</td></tr>
+            <tr><td>Films on the map</td><td>82,256 (one per title and year, after collapsing
+              formats)</td></tr>
+            <tr><td>Enrichment</td><td>TMDB: posters, cast and crew, genres, popularity, runtime,
+              and synopsis gap-fill</td></tr>
+            <tr><td>Embedding model</td><td>Cohere embed-v4.0, 1024 dimensions, input type
+              "clustering"</td></tr>
+            <tr><td>Layout</td><td>UMAP (cosine distance, n_neighbors 15, min_dist 0.05, random_state
+              42)</td></tr>
+            <tr><td>Regions and names</td><td>Toponymy for hierarchical clustering, with Claude Haiku
+              4.5 writing the region labels</td></tr>
+            <tr><td>Rendering</td><td>DataMapPlot, plus a few hand-written touches (filter panel,
+              mobile card, on-zoom labels)</td></tr>
+            <tr><td>Code</td><td>A sequence of plain Python scripts, eight stages, fetch through
+              render</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
 
     <footer>
       Catalog:
@@ -83,5 +358,17 @@
       (this product uses the TMDB API but is not endorsed or certified by TMDB).
     </footer>
   </main>
+
+  <script>
+    // Open the Technical details panel when linked to directly (TOC or shared #technical URL).
+    function openTargetDetails() {
+      var id = location.hash.slice(1);
+      if (!id) return;
+      var el = document.getElementById(id);
+      if (el && el.tagName.toLowerCase() === 'details') el.open = true;
+    }
+    window.addEventListener('hashchange', openTargetDetails);
+    openTargetDetails();
+  </script>
 </body>
 </html>

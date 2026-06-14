@@ -1134,7 +1134,10 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
         colormap_rawdata=rawdata,
         colormap_metadata=metadata,
         title=PROJECT_NAME,
-        sub_title=f"{PROJECT_TAGLINE} · {VARIANT_BLURB[variant]}",
+        # Plain tagline only; the per-variant blurb suffix (VARIANT_BLURB) was
+        # dropped — it only existed to contrast the two layout variants, which we
+        # no longer surface to first-time visitors.
+        sub_title=PROJECT_TAGLINE,
         enable_search=True,
         font_family="IBM Plex Sans",
         tooltip_font_family="IBM Plex Sans",
