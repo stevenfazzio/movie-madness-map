@@ -690,17 +690,20 @@ POINT_LABELS_JS = """<script>
     }
     var characterSet = Array.from(charSet);
 
-    // Gate on the ACTUAL overview zoom captured at load. (initialViewState.zoom is
-    // baked at render time and is LOWER than the real fit-zoom on large screens, so
-    // basing the gate on it made labels appear near the overview there.) Labels
-    // fade in DELTA zoom levels past wherever the map first sat.
-    var baseZoom = null, DELTA = 4, FADE = 1.2;
+    // Gate on in-view DENSITY, not a zoom number: labels fade in as the count of
+    // points inside the viewport drops from CAND_HIGH to CAND_LOW. A zoom-delta
+    // gate kept misfiring on large screens (the baked initialViewState.zoom and
+    // the load-time zoom didn't match the real overview), and density is what we
+    // actually want — "show labels once the view is focused enough to read them."
+    // Adapts to screen size for free (a bigger viewport holds more points, so it
+    // gates labels until you zoom further in).
+    var CAND_HIGH = 600, CAND_LOW = 200;   // >HIGH in view: hidden; <LOW: full opacity
     var MAX_LABELS = 200;             // hard cap on labels drawn at once
     var CELL_W = 96, CELL_H = 18;     // declutter grid cell (screen px)
 
     function viewport() { var v = datamap.deckgl.getViewports(); return v && v[0]; }
 
-    function visibleData(vp) {
+    function inViewCandidates(vp) {
       var c1 = vp.unproject([0, 0]), c2 = vp.unproject([vp.width, vp.height]);
       var minX = Math.min(c1[0], c2[0]), maxX = Math.max(c1[0], c2[0]);
       var minY = Math.min(c1[1], c2[1]), maxY = Math.max(c1[1], c2[1]);
@@ -710,6 +713,10 @@ POINT_LABELS_JS = """<script>
         if (x < minX || x > maxX || y < minY || y > maxY || !titles[i]) continue;
         cand.push(i);
       }
+      return cand;
+    }
+
+    function declutter(vp, cand) {
       if (pop) cand.sort(function(a, b) { return pop[b] - pop[a]; });
       var occ = {}, out = [];
       for (var k = 0; k < cand.length && out.length < MAX_LABELS; k++) {
@@ -741,12 +748,12 @@ POINT_LABELS_JS = """<script>
 
     function update() {
       var vp = viewport(); if (!vp) return;
-      if (baseZoom === null) baseZoom = vp.zoom;   // the overview zoom on THIS screen
-      var opacity = Math.max(0, Math.min(1, (vp.zoom - (baseZoom + DELTA)) / FADE));
+      var cand = inViewCandidates(vp);
+      var opacity = Math.max(0, Math.min(1, (CAND_HIGH - cand.length) / (CAND_HIGH - CAND_LOW)));
       // dot screen radius -> place the label just above it
       var ppwu = Math.abs(vp.project([1, 0])[0] - vp.project([0, 0])[0]);
       var dotR = Math.min(R_MAX, Math.max(R_MIN, R_BASE * R_SCALE * ppwu));
-      var layer = buildLayer(opacity > 0 ? visibleData(vp) : [], opacity, -(dotR + 2));
+      var layer = buildLayer(opacity > 0 ? declutter(vp, cand) : [], opacity, -(dotR + 2));
       var i = datamap.layers.findIndex(function(l) { return l.id === 'pointLabelLayer'; });
       var dp = datamap.layers.findIndex(function(l) { return l.id === 'dataPointLayer'; });
       if (i !== -1) datamap.layers[i] = layer;
