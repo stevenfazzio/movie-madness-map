@@ -746,7 +746,7 @@ POINT_LABELS_JS = """<script>
       // dot screen radius -> place the label just above it
       var ppwu = Math.abs(vp.project([1, 0])[0] - vp.project([0, 0])[0]);
       var dotR = Math.min(R_MAX, Math.max(R_MIN, R_BASE * R_SCALE * ppwu));
-      var layer = buildLayer(opacity > 0 ? visibleData(vp) : [], opacity, -(dotR + 5));
+      var layer = buildLayer(opacity > 0 ? visibleData(vp) : [], opacity, -(dotR + 2));
       var i = datamap.layers.findIndex(function(l) { return l.id === 'pointLabelLayer'; });
       var dp = datamap.layers.findIndex(function(l) { return l.id === 'dataPointLayer'; });
       if (i !== -1) datamap.layers[i] = layer;

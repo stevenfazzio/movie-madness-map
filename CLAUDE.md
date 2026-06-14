@@ -228,7 +228,7 @@ mobile. Instead we **viewport-cull + declutter** on each view-state change:
 So the layer stays a few hundred labels regardless of the 82k total (~3ms/update
 measured, rAF-throttled inside a wrapped `onViewStateChange` that still calls the
 original). White SDF text + dark halo, sized in pixels, placed just above each dot
-(`getAlignmentBaseline:'bottom'`; offset = `-(dotRadius+5)` recomputed per update —
+(`getAlignmentBaseline:'bottom'`; offset = `-(dotRadius+2)` recomputed per update —
 the dot's screen radius is `getRadius*radiusScale*pixels-per-world-unit`, capped at
 `radiusMaxPixels`≈24, so a *fixed* offset can't clear it at high zoom). **Two
 gotchas found on-device (2026-06-14):** (1) gate on the overview zoom captured at
