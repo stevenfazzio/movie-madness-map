@@ -189,6 +189,20 @@ info layer is unreachable on a phone. Phase 1 fixes both; ported/re-themed from
   **drag-suppression** — pointer-move tracking sets an `isDrag` flag; the card's
   `onHover` ignores hovers once a gesture passes ~10px, so panning no longer pops
   the card (`onClick` is unaffected — deck only fires it on a real tap).
+- **Phase 2 follow-up (footer vs. colormap dropdown, same day)**: the repositioned
+  footer (`bottom:72px`) sat exactly where the colormap dropdown's options expand
+  *upward* when open, so its bottom option ("Runtime") was un-tappable. Two causes:
+  the options list was capped at `max-height:50dvh` and scrolled, leaving the
+  bottom option clipped behind the `.color-map-selected` header; and even
+  un-clipped, the footer covers the options through a **stacking-context trap** —
+  the options live in `.content-wrapper` › `.bottom-left` (which has a `transform`,
+  = its own context), so their high *local* z-index is still globally below the
+  footer (a `body` child). Fix: `max-height:85dvh` (all options fit, no
+  scroll/clip) + hide the footer while the dropdown is open (`body.cm-open`,
+  toggled by a MutationObserver on `#colorMapOptions` style.display — wired on
+  `datamapReady`, because datamapplot builds that element *after* our script runs).
+  Also **removed "Genre (TMDB)" from the colormap** (redundant with the store's
+  coarse `store_genre`; trims the dropdown to 8 options).
 - **Verifying mobile here**: the chrome-extension `resize_window` can't drop the
   viewport below ~1368px, so the `@media` breakpoint won't trigger normally. Flip
   it on at the current width via the CSSOM (`rule.media.mediaText='all'` for every

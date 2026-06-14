@@ -5,7 +5,7 @@ embeddings. Hover shows poster (when TMDB matched), title/year, director, the
 synopsis, coarse genre, the store shelf section, formats, and rating; clicking a
 point opens the film's search page on moviemadness.org ("go rent it"). A colormap
 dropdown covers year, coarse genre, format, rating, editions, and TMDB
-genre/popularity/runtime. Toponymy region names float on top.
+popularity/runtime. Toponymy region names float on top.
 
 Post-render patches (see postprocess_html / inject_filter_panel /
 inject_mobile_support): attribution footer, faster scroll-zoom, the composable
@@ -307,7 +307,11 @@ MOBILE_CSS = """<style>
   .stack.top-left { max-height: none !important; overflow-y: visible !important; }
   .stack.bottom-left { display: flex !important; }
   #colormap-selector-container { max-width: calc(100vw - 24px); }
-  .color-map-options { max-height: 50dvh !important; }
+  /* Roomy enough for all options so the upward-opening dropdown doesn't scroll
+     and clip its bottom option (which then renders behind the .color-map-selected
+     header — the header is z100, options z101/z102, so an UN-clipped option wins,
+     but a scrolled-out one isn't painted). 50dvh was too short. */
+  .color-map-options { max-height: 85dvh !important; }
   /* The deck.gl hover tooltip is replaced by the bottom-sheet card on touch. */
   .deck-tooltip { display: none !important; }
   /* Phase 2: show the mobile legend popover (the desktop legend in .top-right
@@ -332,6 +336,10 @@ MOBILE_CSS = """<style>
     max-width: none !important; text-align: center !important;
     font-size: 9px !important; line-height: 1.35 !important; padding: 0 10px !important;
   }
+  /* The colormap dropdown opens upward, over where the footer now sits; hide the
+     footer while it's open (body.cm-open, toggled by JS) so all options stay
+     tappable — otherwise the footer covers the bottom option(s). */
+  body.cm-open #mm-attribution { display: none !important; }
 }
 
 /* Touch info card — dark bottom sheet. Reuses the filter panel's :root palette;
@@ -604,6 +612,24 @@ MOBILE_JS = """<script>
   }
   window.addEventListener('datamapReady', function() { setTimeout(sync, 300); });
   setTimeout(sync, 1000);  // fallback if datamapReady already fired
+
+  // Toggle body.cm-open while the colormap dropdown is open, so the @media rule
+  // hides the footer. (The footer sits in front of the dropdown's options via a
+  // stacking-context trap — content-wrapper is nested and the footer is a body
+  // child — so hiding it is the reliable fix.) datamapplot builds #colorMapOptions
+  // AFTER this script runs (and may rebuild it), so wire the observer on
+  // datamapReady + a fallback, keyed by a per-element flag, not at parse time.
+  function setupCmOpen() {
+    var o = document.getElementById('colorMapOptions');
+    if (!o || o.__cmObserved) return;
+    o.__cmObserved = true;
+    var t = function() { document.body.classList.toggle('cm-open', o.style.display !== 'none'); };
+    new MutationObserver(t).observe(o, { attributes: true, attributeFilter: ['style'] });
+    t();
+  }
+  window.addEventListener('datamapReady', function() { setTimeout(setupCmOpen, 350); });
+  setTimeout(setupCmOpen, 1100);
+  setupCmOpen();
 })();
 </script>"""
 
@@ -863,20 +889,16 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
 
     # TMDB-derived colormaps only exist on an enriched corpus (stage 02 run).
     if df["matched"].fillna(False).any():
-        tmdb_genre_cat = df["tmdb_genre_primary"].fillna("—").to_numpy()
         pop = df["popularity"].to_numpy(dtype=float)
         pop_log = np.log10(np.where(np.isfinite(pop) & (pop > 0), pop, np.nan))
         finite_pop = pop_log[np.isfinite(pop_log)]
         pop_log = np.where(np.isfinite(pop_log), pop_log, finite_pop.min() if finite_pop.size else 0.0)
         runtime_num = _fill_nonfinite(df["runtime"].to_numpy(dtype=float)).clip(40, 240)
-        rawdata += [tmdb_genre_cat, pop_log, runtime_num]
+        rawdata += [pop_log, runtime_num]
+        # "Genre (TMDB)" is intentionally omitted from the colormap — the store's
+        # coarse genre ("store_genre") is the canonical genre coloring, and the
+        # TMDB genre was a near-duplicate that just crowded the dropdown.
         metadata += [
-            {
-                "field": "tmdb_genre",
-                "description": "Genre (TMDB)",
-                "kind": "categorical",
-                "color_mapping": categorical_color_mapping(tmdb_genre_cat, default="—"),
-            },
             {"field": "popularity", "description": "TMDB popularity (log)", "kind": "continuous", "cmap": "inferno"},
             {"field": "runtime", "description": "Runtime (min)", "kind": "continuous", "cmap": "cividis"},
         ]
