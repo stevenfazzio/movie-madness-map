@@ -19,6 +19,7 @@ from urllib.parse import quote
 import numpy as np
 import pandas as pd
 from config import (
+    CATALOG_RAW_PARQUET,
     FILMS_BASE_PARQUET,
     FILMS_PARQUET,
     MAX_FILMS,
@@ -80,6 +81,116 @@ TMDB_COLS = [
 ]
 
 
+_T_STOP = {"the", "a", "an", "of", "and", "de", "la", "le", "el", "il", "part", "vol",
+           "los", "las", "un", "une", "season", "series", "disc", "collection", "complete"}
+_E_STOP = set(
+    "the a an of and or to in is are was were on for with at by from as it its his her their this "
+    "that these those who what which into out up down over under after before during while when where "
+    "why how he she they we you i him them us not no new film movie story series season about all two one".split()
+)
+_FMT_STOP = _T_STOP | {"blu", "ray", "dvdr", "dvd", "vhs", "4k", "uhd", "r", "edition", "set"}
+
+
+def _norm(s):
+    return re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
+
+
+def _ttok(t):
+    return {w for w in _norm(t).split() if w and w not in _T_STOP and not w.isdigit()}
+
+
+def _stoks(t):
+    return {w for w in _norm(t).split() if w not in _FMT_STOP and not w.isdigit() and len(w) > 1}
+
+
+def _cw(s):
+    return {w for w in _norm(s).split() if len(w) > 2 and w not in _E_STOP}
+
+
+def _jac(a, b):
+    return len(a & b) / len(a | b) if (a and b) else 0.0
+
+
+def _strip_html(s):
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", str(s or "")))).strip()
+
+
+def _verbatim_owner_flags(films: pd.DataFrame) -> set:
+    """Catalog synopsis is byte-shared with an unrelated title, and a sibling
+    sharing it has a matching TMDB overview (so the text demonstrably belongs to
+    that sibling). Catches recycled bodies whose prior occupant we can name."""
+    df = films[["film_id", "title", "synopsis_catalog", "overview", "matched"]].copy()
+    df["sn"] = df["synopsis_catalog"].map(_norm)
+    cat = df[df["sn"].str.len() >= 60]
+    flagged: set = set()
+    for _, g in cat.groupby("sn"):
+        if g["film_id"].nunique() < 2:
+            continue
+        members = list(g.itertuples())
+        synt = _cw(members[0].sn)
+        ov = {m.film_id: (_jac(synt, _cw(m.overview)) if m.matched else float("nan")) for m in members}
+        freq: dict[str, int] = {}
+        for m in members:
+            for t in _ttok(m.title):
+                freq[t] = freq.get(t, 0) + 1
+        dominant = {t for t, c in freq.items() if c >= 2}  # franchise signature -> legit
+        for m in members:
+            if _ttok(m.title) & dominant:
+                continue
+            v = ov[m.film_id]
+            if not (m.matched and v == v and v < 0.06):  # own overview must disagree
+                continue
+            sib = [ov[o.film_id] for o in members if o.film_id != m.film_id and ov[o.film_id] == ov[o.film_id]]
+            if sib and max(sib) >= 0.12:  # a sibling owns the synopsis
+                flagged.add(m.film_id)
+    return flagged
+
+
+def _recycled_slug_flags(films: pd.DataFrame) -> set:
+    """The store reuses WordPress posts: a recycled rental keeps the previous
+    occupant's URL slug and body text. Flag a matched film whose ingested
+    synopsis came from a SKU whose slug names a DIFFERENT title (guarded against
+    numeric/short titles that tokenize to nothing) and whose text disagrees with
+    the film's own TMDB overview. Catches recycled bodies whose prior occupant
+    was never TMDB-matched, so _verbatim_owner_flags misses them."""
+    if not CATALOG_RAW_PARQUET.exists():
+        return set()
+    raw = pd.read_parquet(CATALOG_RAW_PARQUET, columns=["id", "slug", "content_html"])
+    body = {i: _norm(_strip_html(c))[:200] for i, c in zip(raw["id"], raw["content_html"])}
+    slug = dict(zip(raw["id"], raw["slug"]))
+    flagged: set = set()
+    for r in films.itertuples():
+        if not r.matched:
+            continue
+        sc = _norm(r.synopsis_catalog)
+        if len(sc) < 60:
+            continue
+        tt = _stoks(r.title)
+        if not tt:  # numeric/short title -> slug test is meaningless
+            continue
+        skus = list(r.sku_ids) if r.sku_ids is not None else []
+        src = next((s for s in skus if body.get(s, "") == sc[:200]), None)  # the SKU we ingested
+        if src is None:
+            continue
+        st = _stoks(slug.get(src, ""))
+        if len(st) >= 2 and not (st & tt) and _jac(_cw(r.synopsis_catalog), _cw(r.overview)) < 0.06:
+            flagged.add(r.film_id)
+    return flagged
+
+
+def flag_contaminated_catalog_synopsis(films: pd.DataFrame) -> np.ndarray:
+    """Films whose catalog synopsis is provably NOT about that film, via either
+    route below. Both are the same root cause -- the store recycles WordPress
+    rental posts and leaves the previous title's slug and body behind (e.g. a
+    post now titled "The Imitation Game" still lives at /silicon-valley-season-6
+    and carries Silicon Valley's plot). Both are gated on the synopsis disagreeing
+    with the film's own TMDB overview, so a correct synopsis paired with a bad
+    TMDB match is left alone. ~3,300 films; see analysis/. These get the
+    TMDB-overview fallback instead of the stale catalog copy."""
+    flagged = _verbatim_owner_flags(films) | _recycled_slug_flags(films)
+    return films["film_id"].isin(flagged).to_numpy()
+
+
 def main() -> None:
     films = pd.read_parquet(FILMS_BASE_PARQUET)
 
@@ -99,13 +210,20 @@ def main() -> None:
         films[col] = films[col].map(lambda v: list(v) if isinstance(v, (list, np.ndarray)) else [])
 
     # --- synopsis: store copy first, TMDB overview as gap-fill (then hygiene) ---
-    films["synopsis"] = np.where(films["synopsis_catalog"] != "", films["synopsis_catalog"], films["overview"])
+    # ...except where the store's copy is provably a different film's synopsis
+    # (CMS contamination); there the TMDB overview wins. See
+    # flag_contaminated_catalog_synopsis + analysis/.
+    contaminated = flag_contaminated_catalog_synopsis(films)
+    use_catalog = (films["synopsis_catalog"] != "") & ~contaminated
+    films["synopsis"] = np.where(use_catalog, films["synopsis_catalog"], films["overview"])
     films["synopsis"] = films["synopsis"].map(clean_text)
     films["synopsis_source"] = np.select(
-        [films["synopsis_catalog"] != "", films["overview"] != ""],
+        [use_catalog, films["overview"] != ""],
         ["catalog", "tmdb"],
         default="none",
     )
+    films["synopsis_overridden"] = contaminated
+    print(f"synopsis override: {int(contaminated.sum())} contaminated catalog synopses replaced with TMDB overview")
 
     # --- coarse genre (cleaned) — used by embed text, hover, and colormap ---
     films["genres_coarse"] = films["genres_mm"].map(clean_genres)

@@ -7,3 +7,5 @@ __pycache__/
 data/
 .env
 *.egg-info/
+# generated report; regenerate with analysis/report_build.py
+analysis/*.xlsx

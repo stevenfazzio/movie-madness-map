@@ -91,6 +91,39 @@ these landed in one rerun:
   later render-only pass). TMDB backfill for title-only films NOT pursued (low
   yield, risky per QA). (The filter panel, once deferred, was built — see below.)
 
+## Decisions & QA (2026-06-14 — recycled-post synopsis override)
+
+- **The store RECYCLES WordPress rental posts** (learned by probing, after a map
+  dot showed Wes Anderson's *Darjeeling Limited* in the anime region carrying
+  *Revolutionary Girl Utena*'s synopsis). When a title leaves the shelves an old
+  `rental` post is re-titled for the new one, but its URL **slug and `content`
+  body are left stale** — a post now titled "Imitation Game, The (Blu-Ray)" still
+  lives at `?rental=silicon-valley-season-6-dvd` and its REST `content` is still
+  *Silicon Valley*'s plot (confirmed against the live API; not a crawl bug).
+  **NOT customer-visible**: the site's search reads synopses from the maven/`mmdb`
+  backend (same source as cast/director), so browsers see correct text; the stale
+  body only surfaces via the REST API we ingest and old permalinks.
+- **Synopsis override** (stage 03 `flag_contaminated_catalog_synopsis`): swaps a
+  stale catalog synopsis for the film's TMDB overview, gated on the synopsis
+  disagreeing with that overview (<6% word overlap) so a correct synopsis + bad
+  TMDB match is left alone. Two unioned detectors: `_verbatim_owner_flags` (body
+  byte-shared with another catalog title whose TMDB overview matches it — names
+  the prior occupant) and `_recycled_slug_flags` (source SKU's slug names a
+  different film, guarded against numeric/short titles). ~3,329 films; adds a
+  `synopsis_overridden` bool (`synopsis_source` → `tmdb`). `synopsis_source` has
+  no downstream consumers and `synopsis` is only read by stage 07's hover/card,
+  so the change is values-only.
+- **Re-running**: an override changes BOTH variants' embed text (both embed the
+  synopsis), so 03→07 reruns for both. **Stage 04's cache sig does NOT hash text**
+  (`first_id_last_id_count_model_dim_variant`) — delete
+  `data/embeddings_{synopsis,shelf}.npz` to force re-embed or it silently reuses
+  stale vectors. 05/06/07 have no sig guard and always recompute.
+- **Analysis + artifacts** in `analysis/`: detectors/audits (`precision_check.py`,
+  `verify_proven.py`, `report_build.py`) and a curiosity spreadsheet of the
+  recycled records (`movie_madness_recycled_records.xlsx`). Reporting upstream was
+  **declined** (the store's site is fine) — it's framed as a "neat quirk" aside in
+  the eventual project email, not a bug report.
+
 ## Stage 07 interactive layer (post-render, added 2026-06-13)
 
 Everything here is **render-only**: change it and re-run `07_visualize.py`
