@@ -51,7 +51,7 @@ VARIANT_BLURB = {
 }
 
 FORMAT_COLORS = {
-    "VHS only": "#c0392b",
+    "VHS": "#c0392b",
     "4K UHD": "#8e44ad",
     "Blu-Ray": "#2471a3",
     "DVD": "#7f8c8d",
@@ -66,7 +66,6 @@ RATING_COLORS = {
     "NC-17": "#cb4335",
     "X": "#78281f",
     "N/R": "#95a5a6",
-    "Unrated": "#95a5a6",
 }
 
 ATTRIBUTION_HTML = """
@@ -130,7 +129,7 @@ def build_filter_config(df: pd.DataFrame, format_cats, genre_cats, rating_cat) -
     (a film matches if ANY of its values is checked). Range: year / runtime /
     popularity / editions. `colormapFieldToFilterId` syncs a filter to its
     colormap legend (genre is excluded — its filter is finer than the colormap)."""
-    fmt_order = ["4K UHD", "Blu-Ray", "DVD", "VHS only", "Other"]
+    fmt_order = ["4K UHD", "Blu-Ray", "DVD", "VHS", "Other"]
     present_fmt = {c for cats in format_cats for c in cats}
     format_values = [f for f in fmt_order if f in present_fmt]
 
@@ -162,7 +161,7 @@ def build_filter_config(df: pd.DataFrame, format_cats, genre_cats, rating_cat) -
                 {
                     "name": "genre",
                     "filterId": "filter-genre",
-                    "label": "Genre (coarse)",
+                    "label": "Genre",
                     "field": "genre_filter",
                     "values": genre_values,
                     "multiValue": True,
@@ -845,16 +844,18 @@ def pick_coarse_genre(genre_lists: pd.Series) -> pd.Series:
 
 
 def format_bucket(formats: list) -> str:
-    """Single bucket per film — for the COLORMAP (one color per point)."""
+    """Single bucket per film — for the COLORMAP (one color per point). Picks the
+    BEST available format on a 4K > Blu-Ray > DVD > VHS ladder; the colormap is
+    labeled "Format (best available)" to match."""
     fset = set(formats)
-    if fset == {"VHS"}:
-        return "VHS only"
     if "4K UHD" in fset:
         return "4K UHD"
     if any("Blu-Ray" in f for f in fset):
         return "Blu-Ray"
     if any(f.startswith("DVD") for f in fset):
         return "DVD"
+    if "VHS" in fset:
+        return "VHS"
     return "Other"
 
 
@@ -863,8 +864,8 @@ _FORMAT_COVERED = {"4K UHD", "Blu-Ray", "Blu-Ray 3D", "DVD", "DVD-R", "VHS"}
 
 def format_categories(formats: list) -> list[str]:
     """The SET of format buckets a film qualifies for — for the multi-select
-    FILTER, so a film on 4K+Blu-ray+DVD matches any of those checkboxes (not just
-    the colormap's priority bucket). 'VHS only' stays exclusive (formats=={VHS})."""
+    FILTER, so a film on 4K+Blu-ray+DVD+VHS matches any of those checkboxes (not
+    just the colormap's priority bucket). Every format is a plain contains-match."""
     fset = set(formats)
     cats = []
     if "4K UHD" in fset:
@@ -873,8 +874,8 @@ def format_categories(formats: list) -> list[str]:
         cats.append("Blu-Ray")
     if any(f.startswith("DVD") for f in fset):
         cats.append("DVD")
-    if fset == {"VHS"}:
-        cats.append("VHS only")
+    if "VHS" in fset:
+        cats.append("VHS")
     if not cats or (fset - _FORMAT_COVERED):  # Book/Laserdisc/etc., or nothing matched
         cats.append("Other")
     return cats
@@ -912,7 +913,7 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     # --- hover fields (raw HTML is interpolated into the template; pre-escape) ---
     year_str = df["year"].map(lambda y: str(int(y)) if pd.notna(y) else "?")
     poster_html = [
-        f'<img src="{p}" style="width:92px;float:left;margin:0 10px 6px 0;border-radius:3px" loading="lazy">'
+        f'<img src="{p}" style="width:92px;float:right;margin:0 0 6px 10px;border-radius:3px" loading="lazy">'
         if p
         else ""
         for p in df["poster_url"].fillna("")
@@ -945,7 +946,7 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
             if coarse
             else ""
         )
-    rating_clean = df["rating"].fillna("N/R").replace({"": "N/R", "N/": "N/R"})
+    rating_clean = df["rating"].fillna("N/R").replace({"": "N/R", "N/": "N/R", "Unrated": "N/R"})
 
     extra = pd.DataFrame(
         {
@@ -1026,23 +1027,38 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     extra["runtime_filter"] = runtime_num.where(runtime_num > 0).fillna(0).astype(int).to_numpy()
     extra["popularity_filter"] = pop_num.where(pop_num > 0).fillna(-1.0).round(2).to_numpy()
 
+    # Legend follows MPAA severity, not alphabetical: datamapplot's ColorLegend
+    # renders colorMapping in dict-insertion order, so build the dict in that
+    # order. RATING_COLORS spread LAST so the hand-picked green->red palette wins
+    # over the glasbey fallback (which only needs to cover stray values).
+    rating_legend_order = ["G", "PG", "PG-13", "R", "NC-17", "X", "N/R"]
+    _rating_colors = {**categorical_color_mapping(rating_cat, default="N/R"), **RATING_COLORS}
+    rating_color_mapping = {
+        r: _rating_colors[r]
+        for r in rating_legend_order + [v for v in _rating_colors if v not in rating_legend_order]
+        if r in _rating_colors
+    }
+
     rawdata = [year_num, genre_cat, fmt_cat, rating_cat, editions]
     metadata = [
         {"field": "year", "description": "Release year", "kind": "continuous", "cmap": "viridis"},
         {
             "field": "store_genre",
-            "description": "Genre (store, coarse)",
+            "description": "Genre",
             "kind": "categorical",
             "color_mapping": categorical_color_mapping(genre_cat, default="Other"),
         },
-        {"field": "format", "description": "Format", "kind": "categorical", "color_mapping": FORMAT_COLORS},
+        {
+            "field": "format",
+            "description": "Format (best available)",
+            "kind": "categorical",
+            "color_mapping": FORMAT_COLORS,
+        },
         {
             "field": "rating",
             "description": "MPAA rating",
             "kind": "categorical",
-            # RATING_COLORS spread LAST so the hand-picked green->red palette wins
-            # over the glasbey fallback (which only needs to cover stray values).
-            "color_mapping": {**categorical_color_mapping(rating_cat, default="N/R"), **RATING_COLORS},
+            "color_mapping": rating_color_mapping,
         },
         {"field": "editions", "description": "Editions in stock (1-10+)", "kind": "continuous", "cmap": "YlGnBu"},
     ]
