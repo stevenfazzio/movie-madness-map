@@ -1,11 +1,20 @@
-# Data-issues section — draft for the project email (not a standalone email)
+# The recycled-record quirk
 
-A short blurb to drop into the larger project email; replace the bracket with the Sheet link.
+A note on a quirk in the raw Movie Madness catalog, for anyone digging through
+it (and as a possible aside if the project ever gets written up publicly).
 
----
+Movie Madness reuses its rental records. When a title leaves the shelves, an old
+record gets re-titled for whatever takes its place — but the original URL slug
+and synopsis stay behind. So the record now called "The Imitation Game" still
+lives at an address ending in `silicon-valley-season-6-dvd`, and in the public
+data it still carries Silicon Valley's plot. A few thousand entries in the raw
+catalog describe the wrong movie this way.
 
-A heads-up if you ever go digging in the raw catalog yourself: Movie Madness reuses its rental records. When a title leaves the shelves, an old record gets re-titled for whatever takes its place, but the original URL slug and synopsis stay behind. So the record now called "The Imitation Game" still lives at an address ending in `silicon-valley-season-6-dvd`, and in the public data it still carries Silicon Valley's plot. The store's own search reads from a separate system, so nobody browsing the site ever sees this. But it means a few thousand entries in the raw catalog describe the wrong movie entirely. I gathered the ones I could pin down here: [Google Sheet]. It's more of a fun artifact than a problem to fix.
+The store's own search reads synopses from a separate system, so nobody browsing
+the site ever sees this — the staleness lives only in the raw catalog data and
+old permalinks. The pipeline detects and corrects it (see
+`flag_contaminated_catalog_synopsis` in stage 03 and the audits alongside this
+file); the recovered set is catalogued in
+`movie_madness_recycled_records.xlsx`.
 
----
-
-*Tone notes: this is a "huh, neat" aside, not a bug report. The store's customers see correct synopses; the staleness only lives in the raw catalog data and old permalinks. Trim to taste.*
+It's a fun artifact more than a problem to fix.
