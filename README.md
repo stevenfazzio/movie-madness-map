@@ -52,3 +52,12 @@ uv run python pipeline/00_fetch_catalog.py    # ... through 07, in order
   they ship memberships too.
 - **Film metadata** (posters, director/cast, synopsis gap-fill, genres): [TMDB](https://www.themoviedb.org/).
   This product uses the TMDB API but is not endorsed or certified by TMDB.
+
+## License
+
+The **code** in this repository is licensed under the [MIT License](LICENSE).
+
+The **map data** embedded in the rendered pages under `docs/` (catalog text, synopses, genres,
+cast/crew, ratings, poster references) is *not* covered by that grant — it is derived from Movie
+Madness and TMDB and remains subject to their respective terms (see Data sources & attribution
+above). Reuse the code freely; clearing reuse of the embedded data is your own responsibility.

@@ -1,0 +1,48 @@
+This repository is two different things under one roof, and they are
+licensed differently.
+
+1. THE CODE (the pipeline scripts, configuration, and supporting files)
+   is licensed under the MIT License, reproduced below.
+
+2. THE MAP DATA — the film catalog text, synopses, genres, cast/crew,
+   ratings, and poster references embedded in the rendered pages under
+   docs/ — is NOT the author's to license and is NOT covered by the MIT
+   grant below. It is derived from third parties and remains subject to
+   their terms:
+
+     - Catalog listings and synopses are the property of Movie Madness
+       (moviemadness.org), a nonprofit video store. This project is an
+       unaffiliated fan tribute, not endorsed by or connected with
+       Movie Madness.
+
+     - Film metadata, cast/crew, and posters are sourced from The Movie
+       Database (TMDB) and are subject to the TMDB Terms of Use
+       (https://www.themoviedb.org/terms-of-use). This product uses the
+       TMDB API but is not endorsed or certified by TMDB.
+
+   Reusing the code is free under the terms below; reusing the embedded
+   data is your responsibility to clear with its respective sources.
+
+=======================================================================
+
+MIT License
+
+Copyright (c) 2026 Steven Fazzio
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
