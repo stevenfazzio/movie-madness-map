@@ -95,6 +95,18 @@ def postprocess_html(html: str) -> str:
     # Minified controller config: scrollZoom:{speed:0.01,smooth:true}
     html, n = re.subn(r"(scrollZoom:\{speed:)[0-9.]+", rf"\g<1>{ZOOM_SPEED}", html, count=1)
     assert n == 1, "scroll-zoom speed token not found (datamapplot internals changed?)"
+    # Strip the colormap recolor animation. recolorPoints/resetPointColors clone the
+    # point layer with a pre-supplied BINARY getFillColor buffer AND a GPU transition
+    # (transitions:{getFillColor:{...}}). deck.gl GPU attribute transitions only work
+    # with accessor-generated attributes, never raw binary buffers — there's nothing
+    # for deck to interpolate. Desktop GPUs resolve to the new buffer anyway; the
+    # Pixel's GPU leaves the layer one buffer behind (colors stuck on the prior
+    # colormap) or with a zeroed alpha channel (all dots vanish) until the next
+    # setProps. Dropping the transition makes each recolor a wholesale buffer swap —
+    # the supported binary path — so colors + alpha apply instantly and correctly.
+    # Both occurrences (recolorPoints + resetPointColors) carry the identical token.
+    html, n = re.subn(r",transitions:\{getFillColor:\{duration:\d+,easing:[^}]+\}\}", "", html)
+    assert n == 2, f"expected 2 getFillColor transition tokens to strip, found {n} (datamapplot internals changed?)"
     return html
 
 
