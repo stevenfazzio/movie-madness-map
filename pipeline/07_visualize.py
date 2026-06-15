@@ -50,12 +50,29 @@ VARIANT_BLURB = {
     "shelf": "layout: synopsis + the store's shelf sections",
 }
 
+# Format is an ORDINAL field (a quality/recency ladder), so the colors are a
+# DIVERGING ramp centered on grey DVD, not arbitrary categorical hues. The old
+# palette (VHS red, 4K purple, Blu blue, DVD grey, Other gold) implied a ranking
+# in which VHS read as the *best* format; this encodes the real ladder by colour
+# temperature: cool = newer/better, warm = older/worse, grey = the base.
+#   4K UHD  vivid cobalt best / newest (most saturated blue; bright enough to
+#                        stand off the black map -- a darker navy sank into it,
+#                        and 4K is the rarest format so it most needs to pop)
+#   Blu-Ray light blue  upgrade above DVD (softer/paler than 4K -> 4K reads >Blu)
+#   DVD     grey        base / default / most common  (the neutral centre)
+#   VHS     sienna      oldest / worst (warm, "aged tape")
+#   Other   green       orthogonal to the ladder — off the warm<->cool axis
+#                        entirely (magenta shared a red channel with sienna and
+#                        read too close to VHS); shares no hue with the ramp.
+# Insertion order IS the legend order (datamapplot renders colorMapping in dict
+# order), so it also lists high->low with Other last, matching format_bucket's
+# ladder and the filter's fmt_order.
 FORMAT_COLORS = {
-    "VHS": "#c0392b",
-    "4K UHD": "#8e44ad",
-    "Blu-Ray": "#2471a3",
+    "4K UHD": "#2f6fe0",
+    "Blu-Ray": "#5b9bd5",
     "DVD": "#7f8c8d",
-    "Other": "#b7950b",
+    "VHS": "#b5683a",
+    "Other": "#48a85a",
 }
 
 RATING_COLORS = {
@@ -193,7 +210,9 @@ def build_filter_config(df: pd.DataFrame, format_cats, genre_cats, rating_cat) -
     Checkbox: format / genre (all 65) / rating. format and genre are MULTI-VALUE
     (a film matches if ANY of its values is checked). Range: year / runtime /
     popularity / editions. `colormapFieldToFilterId` syncs a filter to its
-    colormap legend (genre is excluded — its filter is finer than the colormap)."""
+    colormap legend — only rating qualifies (genre's filter is finer than the
+    colormap; format's is multiValue while its colormap is single best-bucket, so
+    syncing would over-select — see colormap_to_filter below)."""
     fmt_order = ["4K UHD", "Blu-Ray", "DVD", "VHS", "Other"]
     present_fmt = {c for cats in format_cats for c in cats}
     format_values = [f for f in fmt_order if f in present_fmt]
@@ -287,7 +306,15 @@ def build_filter_config(df: pd.DataFrame, format_cats, genre_cats, rating_cat) -
             ],
         },
     ]
-    colormap_to_filter = {"format": "filter-format", "rating": "filter-rating"}
+    # Only rating is legend-synced. format is NOT: its colormap colors a point by
+    # its single BEST-available format (format_bucket), but the format FILTER is
+    # multiValue (matches any film that HAS the format). Syncing the legend to
+    # that filter made clicking "VHS" highlight every film with a VHS edition --
+    # including multi-format films whose best is Blu-Ray/DVD/4K -- contradicting
+    # the colors. Unsynced, the format legend falls back to datamapplot's native
+    # selection, which picks by colormap category (= best bucket) and matches the
+    # colors. rating is genuinely single-value, so legend==filter there.
+    colormap_to_filter = {"rating": "filter-rating"}
     return {
         "totalCount": int(len(df)),
         "sections": sections,

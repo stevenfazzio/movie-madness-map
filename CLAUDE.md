@@ -187,8 +187,16 @@ patches on the minified output), `inject_site_nav`, `inject_filter_panel`,
   title + director + cast + shelf sections + edition qualifiers (Criterion/A24).
   Synopsis deliberately excluded — common words would flood the unranked match.
 - **Genre filter lists all 65 coarse genres** (not the colormap's top-15+Other),
-  so it's decoupled from the colormap legend; only `format`/`rating` are
-  legend-synced via `colormapFieldToFilterId`.
+  so it's decoupled from the colormap legend; only `rating` is legend-synced via
+  `colormapFieldToFilterId`. **`format` was un-synced 2026-06-15**: its colormap
+  colors a point by its single BEST format (`format_bucket`, 4K>Blu>DVD>VHS) but
+  the format filter is multiValue (HAS-the-format), so syncing made a legend
+  click on "VHS" highlight every film with a VHS edition — incl. multi-format
+  films whose best is higher — contradicting the colors. Unsynced, the format
+  legend uses datamapplot's native selection (picks by colormap category = best
+  bucket). 4K/Other looked fine only because `has 4K`≡`best 4K` and `Other`≡`no
+  covered format`. (`FORMAT_COLORS` is also ordered high→low so the legend reads
+  as the quality ladder, not VHS-first.)
 
 ### Mobile support — Phases 1 & 2 (`inject_mobile_support`, 2026-06-13/14)
 
