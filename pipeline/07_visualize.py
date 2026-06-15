@@ -107,6 +107,16 @@ def postprocess_html(html: str) -> str:
     # Both occurrences (recolorPoints + resetPointColors) carry the identical token.
     html, n = re.subn(r",transitions:\{getFillColor:\{duration:\d+,easing:[^}]+\}\}", "", html)
     assert n == 2, f"expected 2 getFillColor transition tokens to strip, found {n} (datamapplot internals changed?)"
+    # Align the colormap-selector labels into one column. Each swatch is N 11px
+    # `.color-swatch-box`es inside a `.color-swatch{width:fit-content}`, so a
+    # 3-color map (Editions) is narrower than a 5-color one; the label sits flush
+    # after the swatch, leaving the text column ragged (see the dropdown). Pin
+    # the swatch to the max rendered width so short swatches pad on the right and
+    # every label starts at the same x. nColors caps at 5, but a full swatch
+    # measures 60px (5*11px boxes + ~5px internal spacing), not 55 — measured in
+    # the browser. min-width (not width) so a future wider map isn't clipped.
+    html, n = re.subn(r"</head>", "<style>.color-swatch{min-width:60px}</style></head>", html, count=1)
+    assert n == 1, "no </head> found for swatch-alignment injection"
     return html
 
 
@@ -1062,7 +1072,19 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     genre_cat = bucket_top_n(genre_single, 15).to_numpy()
     fmt_cat = df["formats"].map(format_bucket).to_numpy()
     rating_cat = rating_clean.to_numpy()
-    editions = df["sku_count"].to_numpy(dtype=float).clip(1, 10)
+    # Editions is extremely right-skewed (84% of films have 1, 99% <=3, max 8)
+    # and only spans 3 meaningful integer values, so a continuous ramp is the
+    # wrong tool twice over: it yields a garbled legend (5 ticks rounding to
+    # "1,2,2,3,3") and its dark top color (YlGnBu navy #081d58) vanishes against
+    # the black map. Bin to 1 / 2 / 3+ with a discrete 3-class YlOrRd ramp
+    # (pale yellow -> orange -> red): a SEQUENTIAL scheme so the colors read as
+    # ordered (each step visibly "more"), every step is legible on black (no
+    # near-black top), and the light low end keeps the 84%-majority 1s showing
+    # the map's shape. A perceptual-uniform map (viridis/plasma) can't be used:
+    # its dark low end would hide the majority.
+    editions_cat = np.where(
+        df["sku_count"] <= 1, "1", np.where(df["sku_count"] == 2, "2", "3+")
+    )
 
     # Per-point values the Advanced Filters panel reads (extra_point_data cols,
     # distinct from the colormap _r/_g/_b/_a columns). Range-filter fields encode
@@ -1096,7 +1118,7 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
         if r in _rating_colors
     }
 
-    rawdata = [year_num, genre_cat, fmt_cat, rating_cat, editions]
+    rawdata = [year_num, genre_cat, fmt_cat, rating_cat, editions_cat]
     metadata = [
         {"field": "year", "description": "Release year", "kind": "continuous", "cmap": "viridis"},
         {
@@ -1117,7 +1139,12 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
             "kind": "categorical",
             "color_mapping": rating_color_mapping,
         },
-        {"field": "editions", "description": "Editions in stock (1-10+)", "kind": "continuous", "cmap": "YlGnBu"},
+        {
+            "field": "editions",
+            "description": "Editions in stock",
+            "kind": "categorical",
+            "color_mapping": {"1": "#ffeda0", "2": "#feb24c", "3+": "#f03b20"},
+        },
     ]
 
     # TMDB-derived colormaps only exist on an enriched corpus (stage 02 run).
