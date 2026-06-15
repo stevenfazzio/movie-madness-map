@@ -133,9 +133,25 @@ these landed in one rerun:
 Everything here is **render-only**: change it and re-run `07_visualize.py`
 (~2 min, both variants); no embed/UMAP/Toponymy rerun. `07` renders with
 DataMapPlot, then `postprocess_html` (attribution footer + scroll-zoom bump to
-`ZOOM_SPEED=0.04`, both regex patches on the minified output), `inject_site_nav`,
-`inject_filter_panel`, `inject_mobile_support`, and `inject_point_labels` patch
-the HTML.
+`ZOOM_SPEED=0.04` + **strip the colormap recolor fill-transition**, all regex
+patches on the minified output), `inject_site_nav`, `inject_filter_panel`,
+`inject_mobile_support`, and `inject_point_labels` patch the HTML.
+
+- **Colormap fill-transition strip** (`postprocess_html`, added 2026-06-14):
+  datamapplot's `recolorPoints`/`resetPointColors` clone the point layer with a
+  pre-supplied **binary** `getFillColor` buffer **and** a GPU
+  `transitions:{getFillColor:{duration:1500,…}}`. deck.gl GPU attribute
+  transitions only work with accessor-generated attributes — with a raw binary
+  buffer there's nothing to interpolate, so the combo is unsupported. Desktop
+  GPUs resolve to the new buffer anyway, but the Pixel's GPU left the layer one
+  buffer behind (colors stuck on the *prior* colormap — selector said "Genre"
+  while dots showed the year spectrum) or with a zeroed alpha channel (**all dots
+  vanish**) until the next `setProps`. We regex-strip both transition tokens so
+  each recolor is a plain wholesale buffer swap; `assert n == 2` fails the render
+  loudly if a datamapplot bump relocates/changes the token. The bug is
+  **mobile-GPU-only and invisible to JS** (the attribute buffer holds the
+  *target*, always correct; only the animated frame is wrong) — verify on a real
+  phone, not the desktop emulator.
 
 - **Advanced Filters panel** is vendored at `pipeline/filter_panel.html` (split
   by `<!-- SECTION: css/html/js -->`), ported from `../steam-atlas` /
