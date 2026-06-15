@@ -69,6 +69,7 @@ RATING_COLORS = {
 }
 
 ATTRIBUTION_HTML = """
+<style>#mm-attribution a{color:#6fc0cf}</style>
 <div id="mm-attribution" style="position:fixed;bottom:8px;left:10px;z-index:10;font-size:11px;
      font-family:Roboto,sans-serif;opacity:.75;pointer-events:auto;max-width:60vw">
   Catalog: <a href="https://www.moviemadness.org/" target="_blank" rel="noopener">Movie Madness</a>,
