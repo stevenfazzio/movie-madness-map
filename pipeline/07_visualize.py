@@ -980,6 +980,23 @@ def bucket_top_n(values: pd.Series, n: int, other="Other") -> pd.Series:
     return values.where(values.isin(top), other)
 
 
+# Plausible analytics: the one site that covers all of stevenfazzio.com. The script
+# ignores localhost and file:// pages, so local previews stay out of the stats. It
+# goes in <head>, ahead of the filter panel's no-op plausible() stub in <body>, so the
+# panel's custom events reach the real script.
+PLAUSIBLE_SNIPPET = """<!-- Privacy-friendly analytics by Plausible -->
+<script async src="https://plausible.io/js/pa-dvmKWiL1gpqH63wOvMp-g.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init()
+</script>"""
+
+
+def inject_analytics(html: str) -> str:
+    assert html.count("</head>") == 1, "analytics: expected exactly one </head>"
+    return html.replace("</head>", PLAUSIBLE_SNIPPET + "\n</head>", 1)
+
+
 def render_variant(variant: str, films: pd.DataFrame) -> None:
     crd = np.load(umap_npz(variant), allow_pickle=True)
     coords = crd["coords"].astype(np.float32)
@@ -1221,6 +1238,7 @@ def render_variant(variant: str, films: pd.DataFrame) -> None:
     html = inject_filter_panel(html, config)
     html = inject_mobile_support(html)
     html = inject_point_labels(html)
+    html = inject_analytics(html)
     out.write_text(html)
     n_filters = sum(len(s["filters"]) for s in config["sections"])
     print(f"  [{variant}] saved {out} ({out.stat().st_size / 1e6:.1f} MB) + {n_filters} filters")
